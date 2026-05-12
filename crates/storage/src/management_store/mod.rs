@@ -68,10 +68,7 @@ pub trait MetricsStore: Send + Sync {
     ) -> BoxFuture<'_, OpResult<Vec<MetricsRow>>>;
 
     /// Delete metrics rows older than the retention period.
-    fn prune_metrics(
-        &self,
-        retention: std::time::Duration,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn prune_metrics(&self, retention: std::time::Duration) -> BoxFuture<'_, OpResult<()>>;
 }
 
 // ── Rate limit store ───────────────────────────────────────────────────
@@ -93,11 +90,7 @@ pub trait RateLimitStore: Send + Sync {
     ) -> BoxFuture<'_, OpResult<i64>>;
 
     /// Record a failed login attempt.
-    fn record_failed_login(
-        &self,
-        principal: &str,
-        source_ip: Option<&str>,
-    ) -> BoxFuture<'_, ()>;
+    fn record_failed_login(&self, principal: &str, source_ip: Option<&str>) -> BoxFuture<'_, ()>;
 
     /// Delete login attempt records older than `max_age_seconds`.
     fn cleanup_old_attempts(&self, max_age_seconds: i64) -> BoxFuture<'_, ()>;
@@ -108,11 +101,7 @@ pub trait RateLimitStore: Send + Sync {
 /// Admin user management (separate from IAM users).
 pub trait AdminStore: Send + Sync {
     /// Create an admin user with a pre-hashed password.
-    fn create_admin(
-        &self,
-        admin_name: &str,
-        password_hash: &str,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn create_admin(&self, admin_name: &str, password_hash: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List all admin users.
     fn list_admins(&self) -> BoxFuture<'_, OpResult<Vec<AdminEntry>>>;
@@ -146,11 +135,7 @@ pub trait AdminStore: Send + Sync {
 pub trait ManagementStore: Send + Sync {
     // ── Accounts ───────────────────────────────────────────────────
 
-    fn create_account(
-        &self,
-        account_id: &str,
-        account_name: &str,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn create_account(&self, account_id: &str, account_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// Delete an account. Must fail with `HasDependents` if the account owns tables.
     fn delete_account(&self, account_id: &str) -> BoxFuture<'_, OpResult<()>>;
@@ -164,10 +149,8 @@ pub trait ManagementStore: Send + Sync {
     ) -> BoxFuture<'_, OpResult<Vec<(String, String, time::OffsetDateTime)>>>;
 
     /// List accounts visible to a specific account.
-    fn list_accounts_for(
-        &self,
-        account_id: &str,
-    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
+    fn list_accounts_for(&self, account_id: &str)
+    -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     fn get_account_detail(
         &self,
@@ -186,11 +169,7 @@ pub trait ManagementStore: Send + Sync {
         password_hash: Option<&str>,
     ) -> BoxFuture<'_, OpResult<()>>;
 
-    fn delete_user(
-        &self,
-        account_id: &str,
-        user_name: &str,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn delete_user(&self, account_id: &str, user_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List users in an account as `(account_id, user_name, user_arn, has_password, created_at)`.
     fn list_users(
@@ -247,17 +226,9 @@ pub trait ManagementStore: Send + Sync {
 
     // ── Groups ─────────────────────────────────────────────────────
 
-    fn create_group(
-        &self,
-        account_id: &str,
-        group_name: &str,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn create_group(&self, account_id: &str, group_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
-    fn delete_group(
-        &self,
-        account_id: &str,
-        group_name: &str,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn delete_group(&self, account_id: &str, group_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List groups in an account as `(account_id, group_name, group_arn, created_at)`.
     fn list_groups(
@@ -294,11 +265,7 @@ pub trait ManagementStore: Send + Sync {
         trust_policy: &serde_json::Value,
     ) -> BoxFuture<'_, OpResult<()>>;
 
-    fn delete_role(
-        &self,
-        account_id: &str,
-        role_name: &str,
-    ) -> BoxFuture<'_, OpResult<()>>;
+    fn delete_role(&self, account_id: &str, role_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List roles in an account as `(account_id, role_name, role_arn, trust_policy, created_at)`.
     fn list_roles(

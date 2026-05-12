@@ -78,9 +78,7 @@ pub fn run(args: &ServeArgs) -> anyhow::Result<()> {
     let backend = &app_config.storage._backend;
     #[cfg(not(feature = "postgres"))]
     if backend == "postgres" {
-        anyhow::bail!(
-            "PostgreSQL backend not enabled. Rebuild with --features postgres"
-        );
+        anyhow::bail!("PostgreSQL backend not enabled. Rebuild with --features postgres");
     }
     #[cfg(feature = "postgres")]
     if backend != "postgres" {
@@ -211,7 +209,7 @@ async fn serve_inner(
 ) -> anyhow::Result<()> {
     let catalog_version = extenddb_storage::operations::catalog_version(&backend)
         .unwrap_or_else(|_| "unknown".to_string());
-    
+
     // Init logging (REQ-LOG-003, REQ-LOG-006) — always syslog in daemon mode.
     // D-3: sqlx messages are controlled by an independent `sqlx_log_level`
     // runtime setting (default: warn). Both extenddb and sqlx messages use the

@@ -144,20 +144,21 @@ impl AuthorizationStore for PostgresCatalogStore {
         let role_name = role_name.to_owned();
         let session_name = session_name.to_owned();
         Box::pin(async move {
-            let row: Option<(Option<serde_json::Value>, Option<serde_json::Value>)> = sqlx::query_as(
-                "SELECT session_policy, session_tags FROM iam_sessions \
+            let row: Option<(Option<serde_json::Value>, Option<serde_json::Value>)> =
+                sqlx::query_as(
+                    "SELECT session_policy, session_tags FROM iam_sessions \
                      WHERE account_id = $1 AND role_name = $2 AND session_name = $3 \
                      AND expires_at > now()",
-            )
-            .bind(&account_id)
-            .bind(&role_name)
-            .bind(&session_name)
-            .fetch_optional(self.pool())
-            .await
-            .map_err(|e| {
-                tracing::error!("fetch_session_data: {e}");
-                OpError::Internal("Database error".to_owned())
-            })?;
+                )
+                .bind(&account_id)
+                .bind(&role_name)
+                .bind(&session_name)
+                .fetch_optional(self.pool())
+                .await
+                .map_err(|e| {
+                    tracing::error!("fetch_session_data: {e}");
+                    OpError::Internal("Database error".to_owned())
+                })?;
 
             let Some((policy_value, tags_value)) = row else {
                 return Ok(None);

@@ -76,10 +76,7 @@ pub trait AuthorizationStore: Send + Sync {
     ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     /// Fetch tags for a resource ARN (for condition key evaluation).
-    fn fetch_resource_tags(
-        &self,
-        arn: &str,
-    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
+    fn fetch_resource_tags(&self, arn: &str) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 }
 
 /// Session data returned by [`AuthorizationStore::fetch_session_data`].

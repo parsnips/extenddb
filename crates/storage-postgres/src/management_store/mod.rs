@@ -26,50 +26,42 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     fn create_account(&self, account_id: &str, account_name: &str) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let account_name = account_name.to_string();
-        Box::pin(async move {
-            self.create_account_impl(&account_id, &account_name).await
-        })
+        Box::pin(async move { self.create_account_impl(&account_id, &account_name).await })
     }
 
     fn delete_account(&self, account_id: &str) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
-        Box::pin(async move {
-            self.delete_account_impl(&account_id).await
-        })
+        Box::pin(async move { self.delete_account_impl(&account_id).await })
     }
 
     fn list_all_accounts(&self) -> BoxFuture<'_, OpResult<Vec<(String, String)>>> {
-        Box::pin(async move {
-            self.list_all_accounts_impl().await
-        })
+        Box::pin(async move { self.list_all_accounts_impl().await })
     }
 
     fn list_all_accounts_full(
         &self,
     ) -> BoxFuture<'_, OpResult<Vec<(String, String, time::OffsetDateTime)>>> {
-        Box::pin(async move {
-            self.list_all_accounts_full_impl().await
-        })
+        Box::pin(async move { self.list_all_accounts_full_impl().await })
     }
 
-    fn list_accounts_for(&self, account_id: &str) -> BoxFuture<'_, OpResult<Vec<(String, String)>>> {
+    fn list_accounts_for(
+        &self,
+        account_id: &str,
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>> {
         let account_id = account_id.to_string();
-        Box::pin(async move {
-            self.list_accounts_for_impl(&account_id).await
-        })
+        Box::pin(async move { self.list_accounts_for_impl(&account_id).await })
     }
 
-    fn get_account_detail(&self, account_id: &str) -> BoxFuture<'_, OpResult<Option<AccountDetail>>> {
+    fn get_account_detail(
+        &self,
+        account_id: &str,
+    ) -> BoxFuture<'_, OpResult<Option<AccountDetail>>> {
         let account_id = account_id.to_string();
-        Box::pin(async move {
-            self.get_account_detail_impl(&account_id).await
-        })
+        Box::pin(async move { self.get_account_detail_impl(&account_id).await })
     }
 
     fn dashboard_counts(&self) -> BoxFuture<'_, OpResult<(i64, i64)>> {
-        Box::pin(async move {
-            self.dashboard_counts_impl().await
-        })
+        Box::pin(async move { self.dashboard_counts_impl().await })
     }
 
     // ── Users ──────────────────────────────────────────────────────
@@ -92,9 +84,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     fn delete_user(&self, account_id: &str, user_name: &str) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
-        Box::pin(async move {
-            self.delete_user_impl(&account_id, &user_name).await
-        })
+        Box::pin(async move { self.delete_user_impl(&account_id, &user_name).await })
     }
 
     fn list_users(
@@ -102,9 +92,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         account_id: &str,
     ) -> BoxFuture<'_, OpResult<Vec<(String, String, String, bool, time::OffsetDateTime)>>> {
         let account_id = account_id.to_string();
-        Box::pin(async move {
-            self.list_users_impl(&account_id).await
-        })
+        Box::pin(async move { self.list_users_impl(&account_id).await })
     }
 
     fn get_user_detail(
@@ -114,9 +102,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Option<UserDetail>>> {
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
-        Box::pin(async move {
-            self.get_user_detail_impl(&account_id, &user_name).await
-        })
+        Box::pin(async move { self.get_user_detail_impl(&account_id, &user_name).await })
     }
 
     fn verify_iam_user_password(
@@ -158,9 +144,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
         let tags = tags.to_vec();
-        Box::pin(async move {
-            self.tag_user_impl(&account_id, &user_name, &tags).await
-        })
+        Box::pin(async move { self.tag_user_impl(&account_id, &user_name, &tags).await })
     }
 
     fn untag_user(
@@ -173,7 +157,8 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let user_name = user_name.to_string();
         let tag_keys = tag_keys.to_vec();
         Box::pin(async move {
-            self.untag_user_impl(&account_id, &user_name, &tag_keys).await
+            self.untag_user_impl(&account_id, &user_name, &tag_keys)
+                .await
         })
     }
 
@@ -184,9 +169,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>> {
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
-        Box::pin(async move {
-            self.list_user_tags_impl(&account_id, &user_name).await
-        })
+        Box::pin(async move { self.list_user_tags_impl(&account_id, &user_name).await })
     }
 
     // ── Groups ─────────────────────────────────────────────────────
@@ -194,17 +177,13 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     fn create_group(&self, account_id: &str, group_name: &str) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let group_name = group_name.to_string();
-        Box::pin(async move {
-            self.create_group_impl(&account_id, &group_name).await
-        })
+        Box::pin(async move { self.create_group_impl(&account_id, &group_name).await })
     }
 
     fn delete_group(&self, account_id: &str, group_name: &str) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let group_name = group_name.to_string();
-        Box::pin(async move {
-            self.delete_group_impl(&account_id, &group_name).await
-        })
+        Box::pin(async move { self.delete_group_impl(&account_id, &group_name).await })
     }
 
     fn list_groups(
@@ -212,9 +191,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         account_id: &str,
     ) -> BoxFuture<'_, OpResult<Vec<(String, String, String, time::OffsetDateTime)>>> {
         let account_id = account_id.to_string();
-        Box::pin(async move {
-            self.list_groups_impl(&account_id).await
-        })
+        Box::pin(async move { self.list_groups_impl(&account_id).await })
     }
 
     fn get_group_detail(
@@ -224,9 +201,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Option<GroupDetail>>> {
         let account_id = account_id.to_string();
         let group_name = group_name.to_string();
-        Box::pin(async move {
-            self.get_group_detail_impl(&account_id, &group_name).await
-        })
+        Box::pin(async move { self.get_group_detail_impl(&account_id, &group_name).await })
     }
 
     fn add_group_member(
@@ -279,9 +254,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     fn delete_role(&self, account_id: &str, role_name: &str) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
-        Box::pin(async move {
-            self.delete_role_impl(&account_id, &role_name).await
-        })
+        Box::pin(async move { self.delete_role_impl(&account_id, &role_name).await })
     }
 
     fn list_roles(
@@ -300,9 +273,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         >,
     > {
         let account_id = account_id.to_string();
-        Box::pin(async move {
-            self.list_roles_impl(&account_id).await
-        })
+        Box::pin(async move { self.list_roles_impl(&account_id).await })
     }
 
     fn get_role_detail(
@@ -312,9 +283,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Option<RoleDetail>>> {
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
-        Box::pin(async move {
-            self.get_role_detail_impl(&account_id, &role_name).await
-        })
+        Box::pin(async move { self.get_role_detail_impl(&account_id, &role_name).await })
     }
 
     fn get_role_trust_policy(
@@ -325,7 +294,8 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
         Box::pin(async move {
-            self.get_role_trust_policy_impl(&account_id, &role_name).await
+            self.get_role_trust_policy_impl(&account_id, &role_name)
+                .await
         })
     }
 
@@ -338,9 +308,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
         let tags = tags.to_vec();
-        Box::pin(async move {
-            self.tag_role_impl(&account_id, &role_name, &tags).await
-        })
+        Box::pin(async move { self.tag_role_impl(&account_id, &role_name, &tags).await })
     }
 
     fn untag_role(
@@ -353,7 +321,8 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let role_name = role_name.to_string();
         let tag_keys = tag_keys.to_vec();
         Box::pin(async move {
-            self.untag_role_impl(&account_id, &role_name, &tag_keys).await
+            self.untag_role_impl(&account_id, &role_name, &tag_keys)
+                .await
         })
     }
 
@@ -364,9 +333,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>> {
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
-        Box::pin(async move {
-            self.list_role_tags_impl(&account_id, &role_name).await
-        })
+        Box::pin(async move { self.list_role_tags_impl(&account_id, &role_name).await })
     }
 
     // ── Policies ───────────────────────────────────────────────────
@@ -453,11 +420,16 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
         Box::pin(async move {
-            self.get_boundary_impl(&account_id, "user", &user_name).await
+            self.get_boundary_impl(&account_id, "user", &user_name)
+                .await
         })
     }
 
-    fn delete_user_boundary(&self, account_id: &str, user_name: &str) -> BoxFuture<'_, OpResult<()>> {
+    fn delete_user_boundary(
+        &self,
+        account_id: &str,
+        user_name: &str,
+    ) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
         Box::pin(async move {
@@ -489,11 +461,16 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
         Box::pin(async move {
-            self.get_boundary_impl(&account_id, "role", &role_name).await
+            self.get_boundary_impl(&account_id, "role", &role_name)
+                .await
         })
     }
 
-    fn delete_role_boundary(&self, account_id: &str, role_name: &str) -> BoxFuture<'_, OpResult<()>> {
+    fn delete_role_boundary(
+        &self,
+        account_id: &str,
+        role_name: &str,
+    ) -> BoxFuture<'_, OpResult<()>> {
         let account_id = account_id.to_string();
         let role_name = role_name.to_string();
         Box::pin(async move {
@@ -511,9 +488,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<AccessKeyCreated>> {
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
-        Box::pin(async move {
-            self.create_access_key_impl(&account_id, &user_name).await
-        })
+        Box::pin(async move { self.create_access_key_impl(&account_id, &user_name).await })
     }
 
     fn delete_access_key(
@@ -538,9 +513,7 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Vec<(String, bool, time::OffsetDateTime)>>> {
         let account_id = account_id.to_string();
         let user_name = user_name.to_string();
-        Box::pin(async move {
-            self.list_access_keys_impl(&account_id, &user_name).await
-        })
+        Box::pin(async move { self.list_access_keys_impl(&account_id, &user_name).await })
     }
 
     fn import_access_key(
@@ -608,8 +581,6 @@ impl extenddb_storage::management_store::ManagementStore for PostgresCatalogStor
     ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>> {
         let account_id = account_id.to_string();
         let resource = resource.to_string();
-        Box::pin(async move {
-            self.fetch_caller_tags_impl(&account_id, &resource).await
-        })
+        Box::pin(async move { self.fetch_caller_tags_impl(&account_id, &resource).await })
     }
 }

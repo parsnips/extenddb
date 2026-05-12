@@ -102,11 +102,13 @@ pub async fn run(args: DestroyArgs) -> anyhow::Result<()> {
     // Reconnect as admin for DDL operations (the catalog pool must be dropped
     // before we can DROP DATABASE).
     drop(bootstrap);
-    let bootstrap = extenddb_storage::bootstrapper::create_bootstrapper(backend, &args.config, &cli_args)
-        .await
-        .map_err(|e| anyhow::anyhow!("Cannot connect as admin: {e:?}"))?;
+    let bootstrap =
+        extenddb_storage::bootstrapper::create_bootstrapper(backend, &args.config, &cli_args)
+            .await
+            .map_err(|e| anyhow::anyhow!("Cannot connect as admin: {e:?}"))?;
 
-    bootstrap.drop_databases(&data_db)
+    bootstrap
+        .drop_databases(&data_db)
         .await
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 

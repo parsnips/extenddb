@@ -124,7 +124,9 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
             let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM tables")
                 .fetch_one(&pool)
                 .await
-                .map_err(|e| extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string()))?;
+                .map_err(|e| {
+                    extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string())
+                })?;
             Ok(count)
         })
     }
@@ -137,7 +139,9 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
             let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM indexes")
                 .fetch_one(&pool)
                 .await
-                .map_err(|e| extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string()))?;
+                .map_err(|e| {
+                    extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string())
+                })?;
             Ok(count)
         })
     }
@@ -171,7 +175,9 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
                         .connect(&conn)
                         .await
                         .map_err(|e| {
-                            extenddb_storage::diagnostics::DiagError::ConnectionFailed(e.to_string())
+                            extenddb_storage::diagnostics::DiagError::ConnectionFailed(
+                                e.to_string(),
+                            )
                         })?;
                     Ok(name)
                 }
@@ -297,8 +303,8 @@ impl extenddb_storage::management_store::MetricsStore for PostgresCatalogStore {
     fn prune_metrics(&self, retention: std::time::Duration) -> BoxFuture<'_, OpResult<()>> {
         Box::pin(async move {
             #[allow(clippy::cast_possible_wrap)] // retention seconds fit in i64
-            let cutoff =
-                time::OffsetDateTime::now_utc() - time::Duration::seconds(retention.as_secs() as i64);
+            let cutoff = time::OffsetDateTime::now_utc()
+                - time::Duration::seconds(retention.as_secs() as i64);
             sqlx::query("DELETE FROM metrics WHERE bucket < $1")
                 .bind(cutoff)
                 .execute(&self.pool)
@@ -353,7 +359,11 @@ impl extenddb_storage::management_store::RateLimitStore for PostgresCatalogStore
         })
     }
 
-    fn count_ip_failures(&self, source_ip: &str, window_seconds: i64) -> BoxFuture<'_, OpResult<i64>> {
+    fn count_ip_failures(
+        &self,
+        source_ip: &str,
+        window_seconds: i64,
+    ) -> BoxFuture<'_, OpResult<i64>> {
         let source_ip = source_ip.to_owned();
         Box::pin(async move {
             let row: (i64,) = sqlx::query_as(
@@ -401,7 +411,10 @@ impl extenddb_storage::management_store::RateLimitStore for PostgresCatalogStore
             match result {
                 Ok(r) => {
                     if r.rows_affected() > 0 {
-                        tracing::debug!("Cleaned up {} old login attempt records", r.rows_affected());
+                        tracing::debug!(
+                            "Cleaned up {} old login attempt records",
+                            r.rows_affected()
+                        );
                     }
                 }
                 Err(e) => tracing::error!("Login attempt cleanup failed: {e}"),

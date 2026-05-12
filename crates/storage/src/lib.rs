@@ -595,7 +595,6 @@ pub trait CatalogStore:
     fn cached_encryption_key(&self) -> Option<String>;
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

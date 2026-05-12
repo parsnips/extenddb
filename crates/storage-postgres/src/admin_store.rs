@@ -35,14 +35,15 @@ impl extenddb_storage::management_store::AdminStore for PostgresCatalogStore {
 
     fn list_admins(&self) -> BoxFuture<'_, OpResult<Vec<AdminEntry>>> {
         Box::pin(async move {
-            let rows: Vec<(String, time::OffsetDateTime)> =
-                sqlx::query_as("SELECT admin_name, created_at FROM admin_users ORDER BY admin_name")
-                    .fetch_all(self.pool())
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("list_admins: {e}");
-                        OpError::Internal("Database error".to_owned())
-                    })?;
+            let rows: Vec<(String, time::OffsetDateTime)> = sqlx::query_as(
+                "SELECT admin_name, created_at FROM admin_users ORDER BY admin_name",
+            )
+            .fetch_all(self.pool())
+            .await
+            .map_err(|e| {
+                tracing::error!("list_admins: {e}");
+                OpError::Internal("Database error".to_owned())
+            })?;
             Ok(rows
                 .into_iter()
                 .map(|(admin_name, created_at)| AdminEntry {
@@ -73,15 +74,20 @@ impl extenddb_storage::management_store::AdminStore for PostgresCatalogStore {
         })
     }
 
-    fn change_admin_password(&self, admin_name: &str, password_hash: &str) -> BoxFuture<'_, OpResult<()>> {
+    fn change_admin_password(
+        &self,
+        admin_name: &str,
+        password_hash: &str,
+    ) -> BoxFuture<'_, OpResult<()>> {
         let admin_name = admin_name.to_owned();
         let password_hash = password_hash.to_owned();
         Box::pin(async move {
-            let result = sqlx::query("UPDATE admin_users SET password_hash = $1 WHERE admin_name = $2")
-                .bind(&password_hash)
-                .bind(&admin_name)
-                .execute(self.pool())
-                .await;
+            let result =
+                sqlx::query("UPDATE admin_users SET password_hash = $1 WHERE admin_name = $2")
+                    .bind(&password_hash)
+                    .bind(&admin_name)
+                    .execute(self.pool())
+                    .await;
             match result {
                 Ok(r) if r.rows_affected() == 0 => {
                     Err(OpError::NotFound("Admin user not found".to_owned()))
