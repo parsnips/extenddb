@@ -117,7 +117,7 @@ pub async fn handle_update_table<S: TableEngine>(
         .map_err(|e| match e {
             extenddb_storage::error::StorageError::TableNotFound(name) => {
                 DynamoDbError::ResourceNotFoundException(format!(
-                    "Requested resource not found: Table: {name} not found"
+                    "Requested resource not found"
                 ))
             }
             extenddb_storage::error::StorageError::TableNotActive(name) => {

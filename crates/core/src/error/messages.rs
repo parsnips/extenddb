@@ -39,7 +39,7 @@ pub fn error_message(key: ErrorMessageKey, args: &[&str]) -> String {
             )
         }
         ErrorMessageKey::TableNotFound => {
-            format!("Requested resource not found: Table: {} not found", args[0])
+            "Requested resource not found".to_owned()
         }
         ErrorMessageKey::TableAlreadyExists => {
             format!("Table already exists: {}", args[0])

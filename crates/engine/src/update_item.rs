@@ -223,7 +223,7 @@ fn validate_no_key_updates(
             for ks in &key_info.key_schema {
                 if ks.attribute_name == resolved {
                     return Err(DynamoDbError::ValidationException(format!(
-                        "One or more parameter values are not valid. Cannot update attribute {}. \
+                        "One or more parameter values were invalid: Cannot update attribute {}. \
                          This attribute is part of the key",
                         ks.attribute_name
                     )));

@@ -578,7 +578,7 @@ pub fn validate_key_only(
     let expected_count = key_schema.len();
     if key.len() != expected_count {
         return Err(DynamoDbError::ValidationException(
-            "The number of conditions on the keys is invalid".to_owned(),
+            "The provided key element does not match the schema".to_owned(),
         ));
     }
 
