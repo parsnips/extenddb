@@ -1047,3 +1047,220 @@ class TestCredentialValidation:
                 c1.list_tables()
         finally:
             self.mgmt.delete_user(self.account_id, user)
+
+
+# ---------------------------------------------------------------------------
+# Spoofed Session Token
+# ---------------------------------------------------------------------------
+
+
+class TestSpoofedSessionToken:
+    """Verify that a valid ASIA* key with a wrong session token is rejected."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, auth_env, mgmt, account_id, region):
+        self.endpoint = auth_env[0]
+        self.mgmt = mgmt
+        self.account_id = account_id
+        self.region = region
+
+    def test_spoofed_session_token_rejected(self):
+        """ASIA* credentials with an incorrect session token must fail auth."""
+        role = f"r-{uuid.uuid4().hex[:8]}"
+        user = f"u-{uuid.uuid4().hex[:8]}"
+        self.mgmt.create_user(self.account_id, user, "Pass123!")
+        caller_arn = f"arn:aws:iam::{self.account_id}:user/{user}"
+        trust = {
+            "Version": "2012-10-17",
+            "Statement": [{"Effect": "Allow", "Principal": {"AWS": caller_arn}, "Action": "sts:AssumeRole"}],
+        }
+        self.mgmt.create_role(self.account_id, role, trust)
+        self.mgmt.put_role_policy(self.account_id, role, "full", _full_policy())
+
+        try:
+            resp = self.mgmt.assume_role(self.account_id, role, caller_arn, "sess")
+            assert resp.status_code == 201, resp.text
+            creds = resp.json()
+
+            # Use correct access key and secret but a spoofed session token.
+            spoofed_token = "SPOOFED" + "A" * 57
+            client = _make_client(
+                self.endpoint, creds["access_key_id"],
+                creds["secret_access_key"], self.region,
+                session_token=spoofed_token,
+            )
+            with pytest.raises(ClientError) as exc:
+                client.list_tables()
+            assert exc.value.response["Error"]["Code"] in (
+                "UnrecognizedClientException",
+                "InvalidSignatureException",
+            )
+        finally:
+            self.mgmt.delete_user(self.account_id, user)
+            self.mgmt.delete_role(self.account_id, role)
+
+
+# ---------------------------------------------------------------------------
+# Deny All Service Operations (dynamodb:*)
+# ---------------------------------------------------------------------------
+
+
+class TestDenyAllServiceOperations:
+    """Verify explicit deny with dynamodb:* blocks all operations."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, auth_env, mgmt, account_id, region):
+        self.endpoint = auth_env[0]
+        self.mgmt = mgmt
+        self.account_id = account_id
+        self.region = region
+
+    def _user_with_key(self, name):
+        self.mgmt.create_user(self.account_id, name, "Pass123!")
+        resp = self.mgmt.create_access_key(self.account_id, name)
+        creds = resp.json()
+        return creds["access_key_id"], creds["secret_access_key"]
+
+    def test_explicit_deny_all_service_operations(self):
+        """Deny with 'dynamodb:*' blocks all operations even with a separate Allow."""
+        user = f"u-{uuid.uuid4().hex[:8]}"
+        ak, sk = self._user_with_key(user)
+        self.mgmt.put_user_policy(self.account_id, user, "allow-all", _full_policy())
+        self.mgmt.put_user_policy(self.account_id, user, "deny-all", {
+            "Version": "2012-10-17",
+            "Statement": [{"Effect": "Deny", "Action": "dynamodb:*", "Resource": "*"}],
+        })
+        client = _make_client(self.endpoint, ak, sk, self.region)
+        try:
+            with pytest.raises(ClientError) as exc:
+                client.list_tables()
+            assert exc.value.response["Error"]["Code"] == "AccessDeniedException"
+
+            with pytest.raises(ClientError) as exc:
+                client.describe_endpoints()
+            assert exc.value.response["Error"]["Code"] == "AccessDeniedException"
+        finally:
+            self.mgmt.delete_user(self.account_id, user)
+
+
+# ---------------------------------------------------------------------------
+# Resource-Level Permissions (Integration)
+# ---------------------------------------------------------------------------
+
+
+class TestResourceLevelPermissions:
+    """Verify resource ARN scoping in policies works end-to-end."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, auth_env, mgmt, account_id, region):
+        self.endpoint = auth_env[0]
+        self.mgmt = mgmt
+        self.account_id = account_id
+        self.region = region
+
+    def _user_with_key(self, name):
+        self.mgmt.create_user(self.account_id, name, "Pass123!")
+        resp = self.mgmt.create_access_key(self.account_id, name)
+        creds = resp.json()
+        return creds["access_key_id"], creds["secret_access_key"]
+
+    def test_allow_scoped_to_specific_table(self):
+        """Allow policy scoped to a specific table ARN grants access only to that table."""
+        admin = f"adm-{uuid.uuid4().hex[:8]}"
+        user = f"u-{uuid.uuid4().hex[:8]}"
+        admin_ak, admin_sk = self._user_with_key(admin)
+        ak, sk = self._user_with_key(user)
+        self.mgmt.put_user_policy(self.account_id, admin, "full", _full_policy())
+
+        allowed_table = f"t-allowed-{uuid.uuid4().hex[:6]}"
+        denied_table = f"t-denied-{uuid.uuid4().hex[:6]}"
+
+        self.mgmt.put_user_policy(self.account_id, user, "scoped", {
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": "dynamodb:*",
+                "Resource": f"arn:aws:dynamodb:*:*:table/{allowed_table}",
+            }],
+        })
+
+        admin_client = _make_client(self.endpoint, admin_ak, admin_sk, self.region)
+        user_client = _make_client(self.endpoint, ak, sk, self.region)
+
+        try:
+            for t in (allowed_table, denied_table):
+                admin_client.create_table(
+                    TableName=t,
+                    AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+                    KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+                    BillingMode="PAY_PER_REQUEST",
+                )
+                wait_for_active(admin_client, t)
+
+            # Access to the allowed table succeeds.
+            user_client.describe_table(TableName=allowed_table)
+
+            # Access to the denied table fails.
+            with pytest.raises(ClientError) as exc:
+                user_client.describe_table(TableName=denied_table)
+            assert exc.value.response["Error"]["Code"] == "AccessDeniedException"
+        finally:
+            for t in (allowed_table, denied_table):
+                try:
+                    admin_client.delete_table(TableName=t)
+                    wait_for_deleted(admin_client, t)
+                except Exception:
+                    pass
+            self.mgmt.delete_user(self.account_id, admin)
+            self.mgmt.delete_user(self.account_id, user)
+
+    def test_deny_scoped_to_specific_table(self):
+        """Deny policy scoped to a specific table ARN blocks only that table."""
+        admin = f"adm-{uuid.uuid4().hex[:8]}"
+        user = f"u-{uuid.uuid4().hex[:8]}"
+        admin_ak, admin_sk = self._user_with_key(admin)
+        ak, sk = self._user_with_key(user)
+        self.mgmt.put_user_policy(self.account_id, admin, "full", _full_policy())
+
+        blocked_table = f"t-blocked-{uuid.uuid4().hex[:6]}"
+        other_table = f"t-other-{uuid.uuid4().hex[:6]}"
+
+        self.mgmt.put_user_policy(self.account_id, user, "allow-all", _full_policy())
+        self.mgmt.put_user_policy(self.account_id, user, "deny-one", {
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Deny",
+                "Action": "dynamodb:*",
+                "Resource": f"arn:aws:dynamodb:*:*:table/{blocked_table}",
+            }],
+        })
+
+        admin_client = _make_client(self.endpoint, admin_ak, admin_sk, self.region)
+        user_client = _make_client(self.endpoint, ak, sk, self.region)
+
+        try:
+            for t in (blocked_table, other_table):
+                admin_client.create_table(
+                    TableName=t,
+                    AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+                    KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+                    BillingMode="PAY_PER_REQUEST",
+                )
+                wait_for_active(admin_client, t)
+
+            # Access to the other table succeeds.
+            user_client.describe_table(TableName=other_table)
+
+            # Access to the blocked table is denied.
+            with pytest.raises(ClientError) as exc:
+                user_client.describe_table(TableName=blocked_table)
+            assert exc.value.response["Error"]["Code"] == "AccessDeniedException"
+        finally:
+            for t in (blocked_table, other_table):
+                try:
+                    admin_client.delete_table(TableName=t)
+                    wait_for_deleted(admin_client, t)
+                except Exception:
+                    pass
+            self.mgmt.delete_user(self.account_id, admin)
+            self.mgmt.delete_user(self.account_id, user)
