@@ -44,11 +44,7 @@ pub async fn handle_transact_write_items<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let input: TransactWriteItemsInput = serde_json::from_value(body.clone()).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: TransactWriteItemsInput = serde_json::from_value(body.clone()).map_err(crate::deserialize_error)?;
 
     // Compute fingerprint keyed by the client request token for collision
     // resistance. Must happen after parsing so the token is available.

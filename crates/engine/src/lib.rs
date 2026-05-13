@@ -145,6 +145,25 @@ pub(crate) fn sanitize_storage_error(e: extenddb_storage::error::StorageError) -
 }
 
 /// Sideband metrics collected during operation dispatch.
+
+/// Map a serde deserialization error to the appropriate DynamoDB error type.
+///
+/// Enum validation errors (produced by custom Deserialize impls) contain
+/// "validation error detected" and should be returned as `ValidationException`.
+/// All other deserialization failures are `SerializationException`.
+pub(crate) fn deserialize_error(e: serde_json::Error) -> DynamoDbError {
+    let msg = e.to_string();
+    if msg.contains("validation error detected")
+        || msg.contains("may not be empty")
+        || msg.contains("contains duplicates")
+    {
+        DynamoDbError::ValidationException(msg)
+    } else {
+        DynamoDbError::SerializationException(format!(
+            "Start of structure or map found where not expected: {e}"
+        ))
+    }
+}
 ///
 /// Populated by engine handlers so the server layer can record capacity,
 /// returned item counts, and returned byte counts without parsing the JSON

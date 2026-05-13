@@ -31,11 +31,7 @@ pub async fn handle_put_item<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let input: PutItemInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: PutItemInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     let key_info = ctx
         .table_key_info(&input.table_name)

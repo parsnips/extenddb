@@ -28,11 +28,7 @@ pub async fn handle_update_table<S: TableEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: UpdateTableInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: UpdateTableInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.table_name.is_empty() {
         return Err(DynamoDbError::ValidationException(

@@ -45,11 +45,7 @@ pub async fn handle_import_table<S: TableEngine + DataEngine>(
         ));
     }
 
-    let input: ImportTableInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: ImportTableInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     let start_time = epoch_seconds();
     let tcp = &input.table_creation_parameters;
@@ -180,12 +176,7 @@ pub async fn handle_export_table<S: TableEngine + DataEngine>(
         ));
     }
 
-    let input: extenddb_core::types::ExportTableToPointInTimeInput = serde_json::from_value(body)
-        .map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: extenddb_core::types::ExportTableToPointInTimeInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     let start_time = epoch_seconds();
     let export_format = input.export_format.unwrap_or(ExportFormat::DynamoDbJson);

@@ -126,6 +126,16 @@ impl<'de> Visitor<'de> for AttributeValueVisitor {
                             .ok_or_else(|| de::Error::custom("SS elements must be strings"))
                     })
                     .collect::<Result<_, _>>()?;
+                let values: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(std::borrow::ToOwned::to_owned))
+                    .collect();
+                if values.len() != set.len() {
+                    let repr = values.join(", ");
+                    return Err(de::Error::custom(format!(
+                        "One or more parameter values were invalid: Input collection [{repr}] contains duplicates."
+                    )));
+                }
                 Ok(AttributeValue::SS(set))
             }
             "NS" => {

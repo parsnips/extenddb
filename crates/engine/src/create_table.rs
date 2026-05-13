@@ -14,11 +14,7 @@ pub async fn handle_create_table<S: TableEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: CreateTableInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: CreateTableInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     validate_create_table(&input, &ctx.limits)?;
 

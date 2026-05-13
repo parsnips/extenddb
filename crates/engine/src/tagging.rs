@@ -63,11 +63,7 @@ pub async fn handle_tag_resource<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: TagResourceInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: TagResourceInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.resource_arn.is_empty() {
         return Err(DynamoDbError::ValidationException(
@@ -97,11 +93,7 @@ pub async fn handle_untag_resource<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: UntagResourceInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: UntagResourceInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.resource_arn.is_empty() {
         return Err(DynamoDbError::ValidationException(
@@ -131,11 +123,7 @@ pub async fn handle_list_tags_of_resource<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: ListTagsOfResourceInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: ListTagsOfResourceInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.resource_arn.is_empty() {
         return Err(DynamoDbError::ValidationException(

@@ -37,11 +37,7 @@ pub async fn handle_batch_get_item<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let input: BatchGetItemInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: BatchGetItemInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     // Validate: RequestItems must not be empty
     if input.request_items.is_empty() {

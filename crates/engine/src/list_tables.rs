@@ -15,11 +15,7 @@ pub async fn handle_list_tables<S: TableEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: ListTablesInput = serde_json::from_value(body).map_err(|e| {
-        DynamoDbError::SerializationException(format!(
-            "Start of structure or map found where not expected: {e}"
-        ))
-    })?;
+    let input: ListTablesInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     // Defense-in-depth: validate ExclusiveStartTableName characters before reaching storage.
     // Real DynamoDB does not enforce min-length on pagination tokens, so we only check
