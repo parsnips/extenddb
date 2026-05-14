@@ -16,15 +16,24 @@ pub mod error;
 pub mod hooks;
 pub mod management_store;
 pub mod operations;
+pub mod server_components;
 pub mod settings_store;
 pub mod transact;
 
 pub use transact::{TransactGetOp, TransactWriteOp};
 
+pub use server_components::{
+    BackendError, ServerComponents, ServerComponentsFactory, ServerComponentsRegistration,
+    create_server_components,
+};
+
+pub use hooks::{ServerRuntimeHooks, WorkerContext};
+
 pub mod util;
 
-use std::future::Future;
 use std::sync::Arc;
+
+use futures::future::BoxFuture;
 
 use extenddb_core::expression::{Expr, ExpressionMaps, KeyCondition, UpdateAction};
 use extenddb_core::types::{
@@ -60,32 +69,32 @@ pub trait TableEngine: Send + Sync {
         &self,
         account_id: &str,
         input: CreateTableInput,
-    ) -> impl Future<Output = Result<TableDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableDescription, StorageError>>;
 
     fn delete_table(
         &self,
         account_id: &str,
         input: DeleteTableInput,
-    ) -> impl Future<Output = Result<TableDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableDescription, StorageError>>;
 
     fn describe_table(
         &self,
         account_id: &str,
         input: DescribeTableInput,
-    ) -> impl Future<Output = Result<TableDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableDescription, StorageError>>;
 
     fn list_tables(
         &self,
         account_id: &str,
         input: ListTablesInput,
-    ) -> impl Future<Output = Result<ListTablesOutput, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<ListTablesOutput, StorageError>>;
 
     /// Modify table settings (billing mode, throughput, deletion protection).
     fn update_table(
         &self,
         account_id: &str,
         input: UpdateTableInput,
-    ) -> impl Future<Output = Result<TableDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableDescription, StorageError>>;
 
     /// Fetch key schema and attribute definitions for an ACTIVE table.
     ///
@@ -95,7 +104,7 @@ pub trait TableEngine: Send + Sync {
         &self,
         account_id: &str,
         table_name: &str,
-    ) -> impl Future<Output = Result<TableKeyInfo, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableKeyInfo, StorageError>>;
 
     /// Fetch metadata for a secondary index on an ACTIVE table.
     ///
@@ -110,7 +119,7 @@ pub trait TableEngine: Send + Sync {
         account_id: &str,
         table_name: &str,
         index_name: &str,
-    ) -> impl Future<Output = Result<IndexInfo, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<IndexInfo, StorageError>>;
 
     /// Fetch metadata for a secondary index using a known `table_id`.
     ///
@@ -121,7 +130,7 @@ pub trait TableEngine: Send + Sync {
         &self,
         table_id: &str,
         index_name: &str,
-    ) -> impl Future<Output = Result<IndexInfo, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<IndexInfo, StorageError>>;
 }
 
 /// Item-level data operations.
@@ -151,7 +160,7 @@ pub trait DataEngine: Send + Sync {
         condition: Option<&Expr>,
         maps: &ExpressionMaps,
         stream: Option<&StreamCapture>,
-    ) -> impl Future<Output = Result<Option<Item>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Option<Item>, StorageError>>;
 
     /// Read a single item by primary key.
     ///
@@ -160,7 +169,7 @@ pub trait DataEngine: Send + Sync {
         &self,
         key_info: &TableKeyInfo,
         key: &Item,
-    ) -> impl Future<Output = Result<Option<Item>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Option<Item>, StorageError>>;
 
     /// Delete a single item by primary key.
     ///
@@ -180,7 +189,7 @@ pub trait DataEngine: Send + Sync {
         condition: Option<&Expr>,
         maps: &ExpressionMaps,
         stream: Option<&StreamCapture>,
-    ) -> impl Future<Output = Result<Option<Item>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Option<Item>, StorageError>>;
 
     /// Update an item by primary key using update actions.
     ///
@@ -206,7 +215,7 @@ pub trait DataEngine: Send + Sync {
         condition: Option<&Expr>,
         maps: &ExpressionMaps,
         stream: Option<&StreamCapture>,
-    ) -> impl Future<Output = Result<(Option<Item>, Option<Item>), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(Option<Item>, Option<Item>), StorageError>>;
 
     /// Query items by partition key with optional sort key condition.
     ///
@@ -228,7 +237,7 @@ pub trait DataEngine: Send + Sync {
         limit: Option<i64>,
         exclusive_start_key: Option<&Item>,
         index_name: Option<&str>,
-    ) -> impl Future<Output = Result<(Vec<Item>, Option<Item>), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(Vec<Item>, Option<Item>), StorageError>>;
 
     /// Scan all items in a table or index.
     ///
@@ -247,7 +256,7 @@ pub trait DataEngine: Send + Sync {
         segment: Option<i64>,
         total_segments: Option<i64>,
         index_name: Option<&str>,
-    ) -> impl Future<Output = Result<(Vec<Item>, Option<Item>), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(Vec<Item>, Option<Item>), StorageError>>;
 
     /// Execute multiple get operations in a single consistent snapshot.
     ///
@@ -260,7 +269,7 @@ pub trait DataEngine: Send + Sync {
     fn transact_get_items(
         &self,
         ops: &[TransactGetOp<'_>],
-    ) -> impl Future<Output = Result<Vec<Option<Item>>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<Option<Item>>, StorageError>>;
 
     /// Execute multiple write operations atomically in a single transaction.
     ///
@@ -285,13 +294,13 @@ pub trait DataEngine: Send + Sync {
         &self,
         ops: &[TransactWriteOp<'_>],
         token: Option<(&str, &str)>,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Delete idempotency tokens older than the given age in seconds.
     fn cleanup_expired_idempotency_tokens(
         &self,
         max_age_seconds: i64,
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<u64, StorageError>>;
 }
 
 /// TTL, tag, and table-size management operations.
@@ -304,7 +313,7 @@ pub trait MetadataEngine: Send + Sync {
         &self,
         account_id: &str,
         table_name: &str,
-    ) -> impl Future<Output = Result<TimeToLiveDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TimeToLiveDescription, StorageError>>;
 
     /// Enable or disable TTL on a table attribute.
     fn update_ttl(
@@ -313,40 +322,36 @@ pub trait MetadataEngine: Send + Sync {
         table_name: &str,
         attribute_name: &str,
         enabled: bool,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Add or overwrite tags on a resource.
-    fn tag_resource(
-        &self,
-        arn: &str,
-        tags: &[Tag],
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    fn tag_resource(&self, arn: &str, tags: &[Tag]) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Remove tags by key from a resource.
     fn untag_resource(
         &self,
         arn: &str,
         tag_keys: &[String],
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// List all tags for a resource.
-    fn list_tags(&self, arn: &str) -> impl Future<Output = Result<Vec<Tag>, StorageError>> + Send;
+    fn list_tags(&self, arn: &str) -> BoxFuture<'_, Result<Vec<Tag>, StorageError>>;
 
     /// List all table names that have TTL enabled, with their TTL attribute.
     fn tables_with_ttl(
         &self,
         account_id: &str,
-    ) -> impl Future<Output = Result<Vec<(String, String)>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<(String, String)>, StorageError>>;
 
     /// List all tables with TTL enabled across all accounts: `(account_id, table_name, ttl_attribute)`.
     fn all_tables_with_ttl(
         &self,
-    ) -> impl Future<Output = Result<Vec<(String, String, String)>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<(String, String, String)>, StorageError>>;
 
     /// List all tables with TTL enabled AND index ready: `(account_id, table_name, ttl_attribute)`.
     fn all_tables_with_ttl_index_ready(
         &self,
-    ) -> impl Future<Output = Result<Vec<(String, String, String)>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<(String, String, String)>, StorageError>>;
 
     /// Create the TTL expression index concurrently for a table.
     /// Sets `ttl_index_ready = TRUE` on success.
@@ -355,7 +360,7 @@ pub trait MetadataEngine: Send + Sync {
         account_id: &str,
         table_name: &str,
         ttl_attribute: &str,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Drop the TTL expression index for a table.
     /// Sets `ttl_index_ready = FALSE`.
@@ -363,7 +368,7 @@ pub trait MetadataEngine: Send + Sync {
         &self,
         account_id: &str,
         table_name: &str,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Find expired items using the TTL index (ordered scan with LIMIT).
     fn find_expired_items_indexed(
@@ -372,25 +377,23 @@ pub trait MetadataEngine: Send + Sync {
         table_name: &str,
         ttl_attribute: &str,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<Item>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<Item>, StorageError>>;
 
     /// Recompute and store `table_size_bytes` and `item_count` for a table.
     fn refresh_table_size(
         &self,
         account_id: &str,
         table_name: &str,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// List all active table names (for background workers).
     fn list_active_table_names(
         &self,
         account_id: &str,
-    ) -> impl Future<Output = Result<Vec<String>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<String>, StorageError>>;
 
     /// List all active tables across all accounts: `(account_id, table_name)`.
-    fn all_active_tables(
-        &self,
-    ) -> impl Future<Output = Result<Vec<(String, String)>, StorageError>> + Send;
+    fn all_active_tables(&self) -> BoxFuture<'_, Result<Vec<(String, String)>, StorageError>>;
 }
 
 /// DynamoDB Streams record storage and retrieval.
@@ -402,7 +405,7 @@ pub trait StreamEngine: Send + Sync {
         record: &StreamRecord,
         shard_id: &str,
         table_name: &str,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Read stream records from a shard starting after a sequence number.
     fn get_stream_records(
@@ -410,14 +413,14 @@ pub trait StreamEngine: Send + Sync {
         shard_id: &str,
         after_sequence: Option<&str>,
         limit: i64,
-    ) -> impl Future<Output = Result<(Vec<StreamRecord>, Option<String>), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(Vec<StreamRecord>, Option<String>), StorageError>>;
 
     /// Describe a stream (shard list, status, view type).
     fn describe_stream(
         &self,
         account_id: &str,
         input: &DescribeStreamInput,
-    ) -> impl Future<Output = Result<StreamDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<StreamDescription, StorageError>>;
 
     /// List streams, optionally filtered by table name.
     fn list_streams(
@@ -426,13 +429,13 @@ pub trait StreamEngine: Send + Sync {
         table_name: Option<&str>,
         limit: i64,
         exclusive_start_stream_arn: Option<&str>,
-    ) -> impl Future<Output = Result<(Vec<StreamSummary>, Option<String>), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(Vec<StreamSummary>, Option<String>), StorageError>>;
 
     /// Delete stream records older than the retention period.
     fn cleanup_expired_stream_records(
         &self,
         retention_hours: i64,
-    ) -> impl Future<Output = Result<u64, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<u64, StorageError>>;
 
     /// Assign a shard for a given partition key (hash-based).
     fn assign_shard(
@@ -440,13 +443,10 @@ pub trait StreamEngine: Send + Sync {
         account_id: &str,
         table_name: &str,
         partition_key: &str,
-    ) -> impl Future<Output = Result<String, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<String, StorageError>>;
 
     /// Generate the next sequence number for a shard.
-    fn next_sequence_number(
-        &self,
-        shard_id: &str,
-    ) -> impl Future<Output = Result<String, StorageError>> + Send;
+    fn next_sequence_number(&self, shard_id: &str) -> BoxFuture<'_, Result<String, StorageError>>;
 
     /// Validate that a shard exists for the given stream ARN.
     ///
@@ -457,7 +457,7 @@ pub trait StreamEngine: Send + Sync {
         account_id: &str,
         stream_arn: &str,
         shard_id: &str,
-    ) -> impl Future<Output = Result<(), StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<(), StorageError>>;
 
     /// Return the latest sequence number in a shard, or `None` if the shard is empty.
     ///
@@ -466,7 +466,7 @@ pub trait StreamEngine: Send + Sync {
     fn latest_sequence_number(
         &self,
         shard_id: &str,
-    ) -> impl Future<Output = Result<Option<String>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Option<String>, StorageError>>;
 }
 
 /// Background worker operations that require storage access.
@@ -479,7 +479,7 @@ pub trait WorkerStore: Send + Sync {
     /// for each transition that fired.
     fn process_control_plane_transitions(
         &self,
-    ) -> impl Future<Output = Result<Vec<(String, &'static str)>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<(String, &'static str)>, StorageError>>;
 }
 
 /// Backup and point-in-time recovery operations.
@@ -490,26 +490,26 @@ pub trait BackupEngine: Send + Sync {
         account_id: &str,
         table_name: &str,
         backup_name: &str,
-    ) -> impl Future<Output = Result<extenddb_core::types::BackupDetails, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<extenddb_core::types::BackupDetails, StorageError>>;
 
     /// Describe a backup by ARN.
     fn describe_backup(
         &self,
         backup_arn: &str,
-    ) -> impl Future<Output = Result<extenddb_core::types::BackupDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<extenddb_core::types::BackupDescription, StorageError>>;
 
     /// List backups for a table.
     fn list_backups(
         &self,
         account_id: &str,
         table_name: Option<&str>,
-    ) -> impl Future<Output = Result<Vec<extenddb_core::types::BackupSummary>, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<Vec<extenddb_core::types::BackupSummary>, StorageError>>;
 
     /// Delete a backup by ARN.
     fn delete_backup(
         &self,
         backup_arn: &str,
-    ) -> impl Future<Output = Result<extenddb_core::types::BackupDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<extenddb_core::types::BackupDescription, StorageError>>;
 
     /// Restore a table from a backup.
     fn restore_table_from_backup(
@@ -517,16 +517,14 @@ pub trait BackupEngine: Send + Sync {
         account_id: &str,
         target_table_name: &str,
         backup_arn: &str,
-    ) -> impl Future<Output = Result<TableDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableDescription, StorageError>>;
 
     /// Describe continuous backups / PITR status for a table.
     fn describe_continuous_backups(
         &self,
         account_id: &str,
         table_name: &str,
-    ) -> impl Future<
-        Output = Result<extenddb_core::types::ContinuousBackupsDescription, StorageError>,
-    > + Send;
+    ) -> BoxFuture<'_, Result<extenddb_core::types::ContinuousBackupsDescription, StorageError>>;
 
     /// Update continuous backups (enable/disable PITR).
     fn update_continuous_backups(
@@ -534,9 +532,7 @@ pub trait BackupEngine: Send + Sync {
         account_id: &str,
         table_name: &str,
         pitr_enabled: bool,
-    ) -> impl Future<
-        Output = Result<extenddb_core::types::ContinuousBackupsDescription, StorageError>,
-    > + Send;
+    ) -> BoxFuture<'_, Result<extenddb_core::types::ContinuousBackupsDescription, StorageError>>;
 
     /// Restore a table to a point in time.
     // TODO(cleanup): This method is unreachable — the engine handler returns
@@ -547,7 +543,7 @@ pub trait BackupEngine: Send + Sync {
         account_id: &str,
         source_table_name: &str,
         target_table_name: &str,
-    ) -> impl Future<Output = Result<TableDescription, StorageError>> + Send;
+    ) -> BoxFuture<'_, Result<TableDescription, StorageError>>;
 }
 
 /// Supertrait combining all DynamoDB operation traits.
