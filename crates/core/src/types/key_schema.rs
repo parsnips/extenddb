@@ -99,6 +99,8 @@ pub enum IndexType {
 pub struct IndexInfo {
     /// Name of the index.
     pub index_name: String,
+    /// Unique identifier for the index (used as PG table name suffix).
+    pub index_id: String,
     /// GSI or LSI.
     pub index_type: IndexType,
     /// Key schema of the index (HASH, optional RANGE).

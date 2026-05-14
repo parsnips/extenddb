@@ -42,11 +42,13 @@ fn is_undefined_table(err: &StorageError) -> bool {
 
 /// A pending GSI update operation.
 struct GsiUpdate {
-    account_id: String,
+    _account_id: String,
     table_name: String,
+    _table_id: String,
     base_key_schema: Vec<KeySchemaElement>,
     attr_defs: Vec<AttributeDefinition>,
     index_name: String,
+    index_id: String,
     index_key_schema: Vec<KeySchemaElement>,
     index_projection: Projection,
     old_item: Option<Item>,
@@ -97,9 +99,11 @@ impl GsiQueue {
         pk_hash: u64,
         account_id: &str,
         table_name: &str,
+        table_id: &str,
         base_key_schema: &[KeySchemaElement],
         attr_defs: &[AttributeDefinition],
         index_name: &str,
+        index_id: &str,
         index_key_schema: &[KeySchemaElement],
         index_projection: &Projection,
         old_item: Option<&Item>,
@@ -107,11 +111,13 @@ impl GsiQueue {
         delay_ms: u64,
     ) {
         let update = GsiUpdate {
-            account_id: account_id.to_owned(),
+            _account_id: account_id.to_owned(),
             table_name: table_name.to_owned(),
+            _table_id: table_id.to_owned(),
             base_key_schema: base_key_schema.to_vec(),
             attr_defs: attr_defs.to_vec(),
             index_name: index_name.to_owned(),
+            index_id: index_id.to_owned(),
             index_key_schema: index_key_schema.to_vec(),
             index_projection: index_projection.clone(),
             old_item: old_item.cloned(),
@@ -185,7 +191,7 @@ async fn worker(partition_id: usize, part: Arc<Partition>, pool: PgPool) {
 
 /// Apply a single GSI update within a transaction.
 async fn apply_gsi_update(pool: &PgPool, update: &GsiUpdate) -> Result<(), StorageError> {
-    let idx_table = index_table_name(&update.account_id, &update.table_name, &update.index_name);
+    let idx_table = index_table_name(&update.index_id);
     let idx_sks = all_sort_key_info(&update.index_key_schema, &update.attr_defs);
     let base_sks = all_sort_key_info(&update.base_key_schema, &update.attr_defs);
 

@@ -152,6 +152,8 @@ impl PostgresEngine {
         }
 
         // Apply GSI updates (create/delete).
+        let mut created_index_ids: Vec<String> = Vec::new();
+        let mut deleted_index_ids: Vec<String> = Vec::new();
         if let Some(updates) = &input.global_secondary_index_updates {
             for update in updates {
                 if let Some(create) = &update.create {
@@ -180,29 +182,32 @@ impl PostgresEngine {
                         .transpose()
                         .map_err(|e| StorageError::Internal(e.to_string()))?;
 
+                    let index_id = uuid::Uuid::new_v4().to_string();
                     sqlx::query(
                         r"INSERT INTO indexes
-                           (table_id, index_name, index_type, key_schema, projection,
+                           (table_id, index_name, index_id, index_type, key_schema, projection,
                             index_status, provisioned_throughput)
-                           VALUES ($1, $2, 'GSI', $3, $4, 'ACTIVE', $5)",
+                           VALUES ($1, $2, $3, 'GSI', $4, $5, 'ACTIVE', $6)",
                     )
                     .bind(&table_id)
                     .bind(&create.index_name)
+                    .bind(&index_id)
                     .bind(&gsi_ks)
                     .bind(&gsi_proj)
                     .bind(&gsi_pt)
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
+                    created_index_ids.push(index_id);
 
                     // Create the index data table on the data pool (P54 Bug 1).
                     // Catalog metadata is committed first; data DDL follows.
                 }
 
                 if let Some(delete) = &update.delete {
-                    // Verify the index exists.
-                    let existing: Option<(String,)> = sqlx::query_as(
-                        "SELECT index_name FROM indexes WHERE table_id = $1 AND index_name = $2",
+                    // Verify the index exists and fetch its index_id.
+                    let existing: Option<(String, String)> = sqlx::query_as(
+                        "SELECT index_name, index_id FROM indexes WHERE table_id = $1 AND index_name = $2",
                     )
                     .bind(&table_id)
                     .bind(&delete.index_name)
@@ -210,9 +215,8 @@ impl PostgresEngine {
                     .await
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
 
-                    if existing.is_none() {
-                        return Err(StorageError::IndexNotFound(delete.index_name.clone()));
-                    }
+                    let (_, del_index_id) = existing
+                        .ok_or_else(|| StorageError::IndexNotFound(delete.index_name.clone()))?;
 
                     // Delete the index metadata.
                     sqlx::query("DELETE FROM indexes WHERE table_id = $1 AND index_name = $2")
@@ -221,6 +225,7 @@ impl PostgresEngine {
                         .execute(&mut *tx)
                         .await
                         .map_err(|e| StorageError::Internal(e.to_string()))?;
+                    deleted_index_ids.push(del_index_id);
 
                     // Drop the index data table on the data pool after catalog commit.
                 }
@@ -255,8 +260,12 @@ impl PostgresEngine {
                 .as_deref()
                 .unwrap_or(&base_attr_defs);
 
+            let mut create_idx = 0usize;
+            let mut delete_idx = 0usize;
             for update in updates {
                 if let Some(create) = &update.create {
+                    let idx_id = &created_index_ids[create_idx];
+                    create_idx += 1;
                     let data_result = async {
                         let mut data_tx = self
                             .data_pool
@@ -266,9 +275,7 @@ impl PostgresEngine {
 
                         Self::create_index_data_table(
                             &mut data_tx,
-                            account_id,
-                            &input.table_name,
-                            &create.index_name,
+                            idx_id,
                             &create.key_schema,
                             effective_attr_defs,
                             &base_key_schema,
@@ -278,9 +285,8 @@ impl PostgresEngine {
 
                         Self::backfill_gsi(
                             &mut data_tx,
-                            account_id,
-                            &input.table_name,
-                            &create.index_name,
+                            &table_id,
+                            idx_id,
                             &create.key_schema,
                             effective_attr_defs,
                             &base_key_schema,
@@ -298,8 +304,6 @@ impl PostgresEngine {
                     .await;
 
                     if let Err(e) = data_result {
-                        // Data DDL failed. Clean up the catalog index metadata
-                        // so DescribeTable doesn't show a broken GSI.
                         tracing::error!(
                             "Failed to create data table for GSI '{}' on '{}', \
                              cleaning up catalog: {e}",
@@ -317,22 +321,16 @@ impl PostgresEngine {
                     }
                 }
 
-                if let Some(delete) = &update.delete {
-                    let idx_table = Self::index_table_name_static(
-                        account_id,
-                        &input.table_name,
-                        &delete.index_name,
-                    );
+                if update.delete.is_some() {
+                    let idx_id = &deleted_index_ids[delete_idx];
+                    delete_idx += 1;
+                    let idx_table = Self::index_table_name_static(idx_id);
                     if let Err(e) = sqlx::query(&format!("DROP TABLE IF EXISTS {idx_table}"))
                         .execute(&self.data_pool)
                         .await
                     {
-                        // Catalog metadata already deleted. The orphaned data
-                        // table wastes space but is harmless. Log a warning so
-                        // operators can clean up manually.
                         tracing::warn!(
-                            "Failed to drop data table for deleted GSI '{}' on '{}': {e}",
-                            delete.index_name,
+                            "Failed to drop data table for deleted GSI on '{}': {e}",
                             input.table_name,
                         );
                     }

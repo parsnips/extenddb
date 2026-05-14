@@ -43,6 +43,7 @@ CREATE INDEX idx_tables_pending_transition
 -- Index metadata.
 CREATE TABLE IF NOT EXISTS indexes (
     table_id TEXT NOT NULL,
+    index_id TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     index_name TEXT NOT NULL,
     index_type TEXT NOT NULL,
     key_schema JSONB NOT NULL,

@@ -36,6 +36,7 @@ pub(crate) struct TableRow {
 #[derive(sqlx::FromRow)]
 pub(crate) struct IndexRow {
     pub index_name: String,
+    pub index_id: String,
     pub index_type: String,
     pub key_schema: serde_json::Value,
     pub projection: serde_json::Value,
@@ -46,11 +47,9 @@ pub(crate) struct IndexRow {
 impl PostgresEngine {
     /// SQL table name for a GSI data table (static version for use outside `data` module).
     pub(crate) fn index_table_name_static(
-        account_id: &str,
-        table_name: &str,
-        index_name: &str,
+        index_id: &str,
     ) -> String {
-        data::index_table_name(account_id, table_name, index_name)
+        data::index_table_name(index_id)
     }
 
     /// Backfill existing items from the base table into a newly created GSI.
@@ -63,9 +62,8 @@ impl PostgresEngine {
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn backfill_gsi(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        account_id: &str,
-        table_name: &str,
-        index_name: &str,
+        table_id: &str,
+        index_id: &str,
         index_key_schema: &[KeySchemaElement],
         attr_defs: &[AttributeDefinition],
         base_key_schema: &[KeySchemaElement],
@@ -74,8 +72,8 @@ impl PostgresEngine {
     ) -> Result<(), StorageError> {
         const BATCH_SIZE: i64 = 500;
 
-        let base_table = data::data_table_name(account_id, table_name);
-        let idx_table = data::index_table_name(account_id, table_name, index_name);
+        let base_table = data::data_table_name(table_id);
+        let idx_table = data::index_table_name(index_id);
 
         let idx_sks = data::all_sort_key_info(index_key_schema, attr_defs);
         let base_sks = data::all_sort_key_info(base_key_schema, base_attr_defs);
@@ -165,7 +163,7 @@ impl PostgresEngine {
         let row = row.ok_or_else(|| StorageError::TableNotFound(table_name.to_owned()))?;
 
         let index_rows: Vec<IndexRow> = sqlx::query_as(
-            r"SELECT index_name, index_type, key_schema, projection,
+            r"SELECT index_name, index_id, index_type, key_schema, projection,
                       index_status, provisioned_throughput
                FROM indexes WHERE table_id = $1",
         )

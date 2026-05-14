@@ -16,15 +16,13 @@ use extenddb_storage::error::StorageError;
 /// Includes `account_id` for multi-account isolation (Phase 12a).
 /// Table names are validated at the engine layer (alphanumeric + `_.-`),
 /// so this is safe for identifier construction.
-pub(crate) fn data_table_name(account_id: &str, table_name: &str) -> String {
-    format!("\"_ddb_{account_id}_{table_name}\"")
+pub(crate) fn data_table_name(table_id: &str) -> String {
+    format!("\"_ddb_{table_id}\"")
 }
 
 /// SQL table name for a GSI/LSI data table.
-///
-/// Uses `_ddb_<account>_<table>__gsi__<index>` naming convention.
-pub(crate) fn index_table_name(account_id: &str, table_name: &str, index_name: &str) -> String {
-    format!("\"_ddb_{account_id}_{table_name}__gsi__{index_name}\"")
+pub(crate) fn index_table_name(index_id: &str) -> String {
+    format!("\"_ddb_{index_id}\"")
 }
 
 /// Look up all RANGE key attribute definitions from the key schema (preserving order).

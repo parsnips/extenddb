@@ -22,7 +22,7 @@ pub(super) async fn fetch_item_in_tx(
     key_info: &TableKeyInfo,
     key: &Item,
 ) -> Result<Option<Item>, StorageError> {
-    let ddb_table = data_table_name(&key_info.account_id, &key_info.table_name);
+    let ddb_table = data_table_name(&key_info.table_id);
     let pk_name = &key_info.key_schema[0].attribute_name;
     let pk_value = key
         .get(pk_name)
@@ -60,7 +60,7 @@ pub(super) async fn fetch_item_for_update(
     key_info: &TableKeyInfo,
     key: &Item,
 ) -> Result<Option<Item>, StorageError> {
-    let ddb_table = data_table_name(&key_info.account_id, &key_info.table_name);
+    let ddb_table = data_table_name(&key_info.table_id);
     let pk_name = &key_info.key_schema[0].attribute_name;
     let pk_value = key
         .get(pk_name)
@@ -99,7 +99,7 @@ pub(super) async fn upsert_item_in_tx(
     key_info: &TableKeyInfo,
     item: &Item,
 ) -> Result<(), StorageError> {
-    let ddb_table = data_table_name(&key_info.account_id, &key_info.table_name);
+    let ddb_table = data_table_name(&key_info.table_id);
     let pk_name = &key_info.key_schema[0].attribute_name;
     let pk_value = item
         .get(pk_name)
@@ -141,7 +141,7 @@ pub(super) async fn delete_item_in_tx(
     key_info: &TableKeyInfo,
     key: &Item,
 ) -> Result<(), StorageError> {
-    let ddb_table = data_table_name(&key_info.account_id, &key_info.table_name);
+    let ddb_table = data_table_name(&key_info.table_id);
     let pk_name = &key_info.key_schema[0].attribute_name;
     let pk_value = key
         .get(pk_name)

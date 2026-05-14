@@ -1,16 +1,16 @@
-# extenddb — ExtendDB
+# ExtendDB
 
-> **extenddb is an independent open-source project. It is not Amazon DynamoDB, does not contain any DynamoDB source code, and is not affiliated with, endorsed by, or sponsored by Amazon Web Services.** "DynamoDB" is a trademark of Amazon.com, Inc. extenddb is a clean-room implementation that speaks the DynamoDB wire protocol. Behavioral differences from the real service are documented in [Differences from DynamoDB](docs/differences-from-dynamodb.md).
+> **ExtendDB is an independent open source project managed by Amazon Web Services. It is not Amazon DynamoDB and does not contain any DynamoDB source code.** "DynamoDB" is a trademark of Amazon.com, Inc. ExtendDB is a clean-room implementation that speaks the DynamoDB wire protocol. Behavioral differences from the real service are documented in [Differences from DynamoDB](docs/differences-from-dynamodb.md).
 
-A production-grade DynamoDB-compatible API server backed by PostgreSQL. extenddb speaks the DynamoDB wire protocol — any AWS SDK, CLI, or tool that works with DynamoDB works with extenddb, unchanged.
+A production-grade DynamoDB-compatible API adapter backed by PostgreSQL. ExtendDB speaks the DynamoDB wire protocol — any AWS SDK, CLI, or tool that works with DynamoDB works with ExtendDB, unchanged.
 
 ## Use Cases
 
-- **Local development** — run DynamoDB on your laptop with zero cloud dependency
-- **CI/CD pipelines** — deterministic integration tests against a real DynamoDB-compatible backend
+- **Local development** — run DynamoDB workloads on your laptop with zero cloud dependency
+- **CI/CD pipelines** — deterministic integration tests against a DynamoDB-compatible backend
 - **Self-hosted deployments** — run DynamoDB workloads on your own infrastructure (on-premises, private cloud, edge)
 - **Multi-cloud** — use DynamoDB semantics on any cloud that runs PostgreSQL
-- **Air-gapped environments** — full DynamoDB functionality with no internet connectivity
+- **Air-gapped environments** — DynamoDB functionality with no internet connectivity
 
 ## Features
 
@@ -63,7 +63,7 @@ pip install -r requirements.txt
 
 ## Authentication Modes
 
-extenddb ships with builtin IAM authentication enabled by default. All requests must be signed with valid SigV4 credentials created via the management API.
+ExtendDB ships with builtin IAM authentication enabled by default. All requests must be signed with valid SigV4 credentials created via the management API.
 
 | Mode | Config | Description |
 |------|--------|-------------|
@@ -200,6 +200,4 @@ python3 docs/build-docs.py
 Copyright 2026 ExtendDB contributors. Licensed under the Apache License, Version 2.0.
 See [LICENSE](LICENSE) for the full text.
 
-This software is provided "as is" without warranty of any kind. ExtendDB is not
-affiliated with, endorsed by, or sponsored by Amazon Web Services. "DynamoDB" is a trademark
-of Amazon.com, Inc.
+This software is provided "as is" without warranty of any kind. 

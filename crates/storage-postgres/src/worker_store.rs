@@ -76,12 +76,12 @@ impl PostgresEngine {
         .await
         .map_err(|e| StorageError::Internal(e.to_string()))?;
 
-        // Collect index names while the rows still exist.
-        let mut drop_info: Vec<(String, String, Vec<String>)> = Vec::new();
+        // Collect index ids while the rows still exist.
+        let mut drop_info: Vec<(String, Vec<String>)> = Vec::new();
 
-        for (acct_id, name, arn, table_id) in &candidates {
-            let index_names: Vec<(String,)> =
-                sqlx::query_as("SELECT index_name FROM indexes WHERE table_id = $1")
+        for (_acct_id, name, arn, table_id) in &candidates {
+            let index_ids: Vec<(String,)> =
+                sqlx::query_as("SELECT index_id FROM indexes WHERE table_id = $1")
                     .bind(table_id)
                     .fetch_all(&mut *tx)
                     .await
@@ -102,9 +102,8 @@ impl PostgresEngine {
                 .map_err(|e| StorageError::Internal(e.to_string()))?;
 
             drop_info.push((
-                acct_id.clone(),
-                name.clone(),
-                index_names.into_iter().map(|(n,)| n).collect(),
+                table_id.clone(),
+                index_ids.into_iter().map(|(n,)| n).collect(),
             ));
 
             transitions.push((name.clone(), "DELETING → deleted"));
@@ -115,16 +114,16 @@ impl PostgresEngine {
             .map_err(|e| StorageError::Internal(e.to_string()))?;
 
         // P54 Bug 1: Drop data tables on the data pool after catalog commit.
-        for (acct_id, name, index_names) in &drop_info {
+        for (table_id, index_ids) in &drop_info {
             let mut data_tx = self
                 .data_pool
                 .begin()
                 .await
                 .map_err(|e| StorageError::Internal(e.to_string()))?;
-            for idx_name in index_names {
-                Self::drop_index_data_table(&mut data_tx, acct_id, name, idx_name).await?;
+            for idx_id in index_ids {
+                Self::drop_index_data_table(&mut data_tx, idx_id).await?;
             }
-            Self::drop_data_table(&mut data_tx, acct_id, name).await?;
+            Self::drop_data_table(&mut data_tx, table_id).await?;
             data_tx
                 .commit()
                 .await

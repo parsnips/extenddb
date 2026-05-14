@@ -102,6 +102,7 @@ impl PostgresEngine {
         // F-1: Store full ProvisionedThroughputDescription (not the input
         // ProvisionedThroughput) so DescribeTable can deserialize it without
         // failing on the missing NumberOfDecreasesToday field.
+        let mut gsi_index_ids: Vec<String> = Vec::new();
         if let Some(gsis) = &input.global_secondary_indexes {
             for gsi in gsis {
                 let gsi_ks = serde_json::to_value(&gsi.key_schema)
@@ -123,24 +124,28 @@ impl PostgresEngine {
                     .transpose()
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
 
+                let index_id = uuid::Uuid::new_v4().to_string();
                 sqlx::query(
                     r"INSERT INTO indexes
-                       (table_id, index_name, index_type, key_schema, projection,
+                       (table_id, index_name, index_id, index_type, key_schema, projection,
                         index_status, provisioned_throughput)
-                       VALUES ($1, $2, 'GSI', $3, $4, 'ACTIVE', $5)",
+                       VALUES ($1, $2, $3, 'GSI', $4, $5, 'ACTIVE', $6)",
                 )
                 .bind(&table_id)
                 .bind(&gsi.index_name)
+                .bind(&index_id)
                 .bind(&gsi_ks)
                 .bind(&gsi_proj)
                 .bind(&gsi_pt)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| StorageError::Internal(e.to_string()))?;
+                gsi_index_ids.push(index_id);
             }
         }
 
         // Insert LSI metadata
+        let mut lsi_index_ids: Vec<String> = Vec::new();
         if let Some(lsis) = &input.local_secondary_indexes {
             for lsi in lsis {
                 let lsi_ks = serde_json::to_value(&lsi.key_schema)
@@ -148,19 +153,22 @@ impl PostgresEngine {
                 let lsi_proj = serde_json::to_value(&lsi.projection)
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
 
+                let index_id = uuid::Uuid::new_v4().to_string();
                 sqlx::query(
                     r"INSERT INTO indexes
-                       (table_id, index_name, index_type, key_schema, projection,
+                       (table_id, index_name, index_id, index_type, key_schema, projection,
                         index_status, provisioned_throughput)
-                       VALUES ($1, $2, 'LSI', $3, $4, 'ACTIVE', NULL)",
+                       VALUES ($1, $2, $3, 'LSI', $4, $5, 'ACTIVE', NULL)",
                 )
                 .bind(&table_id)
                 .bind(&lsi.index_name)
+                .bind(&index_id)
                 .bind(&lsi_ks)
                 .bind(&lsi_proj)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| StorageError::Internal(e.to_string()))?;
+                lsi_index_ids.push(index_id);
             }
         }
 
@@ -217,20 +225,17 @@ impl PostgresEngine {
 
             Self::create_data_table(
                 &mut data_tx,
-                account_id,
-                &input.table_name,
+                &table_id,
                 &input.key_schema,
                 &input.attribute_definitions,
             )
             .await?;
 
             if let Some(gsis) = &input.global_secondary_indexes {
-                for gsi in gsis {
+                for (i, gsi) in gsis.iter().enumerate() {
                     Self::create_index_data_table(
                         &mut data_tx,
-                        account_id,
-                        &input.table_name,
-                        &gsi.index_name,
+                        &gsi_index_ids[i],
                         &gsi.key_schema,
                         &input.attribute_definitions,
                         &input.key_schema,
@@ -240,12 +245,10 @@ impl PostgresEngine {
                 }
             }
             if let Some(lsis) = &input.local_secondary_indexes {
-                for lsi in lsis {
+                for (i, lsi) in lsis.iter().enumerate() {
                     Self::create_index_data_table(
                         &mut data_tx,
-                        account_id,
-                        &input.table_name,
-                        &lsi.index_name,
+                        &lsi_index_ids[i],
                         &lsi.key_schema,
                         &input.attribute_definitions,
                         &input.key_schema,
