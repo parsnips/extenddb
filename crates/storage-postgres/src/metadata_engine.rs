@@ -147,7 +147,15 @@ impl MetadataEngine for PostgresEngine {
         table_name: &str,
     ) -> Result<(), StorageError> {
         Self::validate_account_id(account_id)?;
-        let data_table = data::data_table_name(account_id, table_name);
+        let (table_id,): (String,) = sqlx::query_as(
+            "SELECT table_id FROM tables WHERE account_id = $1 AND table_name = $2",
+        )
+        .bind(account_id)
+        .bind(table_name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| StorageError::Internal(e.to_string()))?;
+        let data_table = data::data_table_name(&table_id);
 
         // P54 Bug 1: Data tables live in the data database. Read size/count
         // from the data pool, then update the catalog on the catalog pool.
@@ -226,7 +234,15 @@ impl MetadataEngine for PostgresEngine {
         ttl_attribute: &str,
     ) -> Result<(), StorageError> {
         Self::validate_account_id(account_id)?;
-        let data_table = data::data_table_name(account_id, table_name);
+        let (table_id,): (String,) = sqlx::query_as(
+            "SELECT table_id FROM tables WHERE account_id = $1 AND table_name = $2",
+        )
+        .bind(account_id)
+        .bind(table_name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| StorageError::Internal(e.to_string()))?;
+        let data_table = data::data_table_name(&table_id);
         // Strip quotes for index name (data_table_name returns quoted identifier).
         let bare_table = data_table.trim_matches('"');
         let index_name = format!("idx_ttl_{bare_table}");
@@ -259,7 +275,15 @@ impl MetadataEngine for PostgresEngine {
 
     async fn drop_ttl_index(&self, account_id: &str, table_name: &str) -> Result<(), StorageError> {
         Self::validate_account_id(account_id)?;
-        let data_table = data::data_table_name(account_id, table_name);
+        let (table_id,): (String,) = sqlx::query_as(
+            "SELECT table_id FROM tables WHERE account_id = $1 AND table_name = $2",
+        )
+        .bind(account_id)
+        .bind(table_name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| StorageError::Internal(e.to_string()))?;
+        let data_table = data::data_table_name(&table_id);
         let bare_table = data_table.trim_matches('"');
         let index_name = format!("idx_ttl_{bare_table}");
 
@@ -291,7 +315,15 @@ impl MetadataEngine for PostgresEngine {
         limit: usize,
     ) -> Result<Vec<Item>, StorageError> {
         Self::validate_account_id(account_id)?;
-        let data_table = data::data_table_name(account_id, table_name);
+        let (table_id,): (String,) = sqlx::query_as(
+            "SELECT table_id FROM tables WHERE account_id = $1 AND table_name = $2",
+        )
+        .bind(account_id)
+        .bind(table_name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| StorageError::Internal(e.to_string()))?;
+        let data_table = data::data_table_name(&table_id);
 
         let now_epoch = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

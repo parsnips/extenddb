@@ -48,7 +48,7 @@ impl PostgresEngine {
 
         // Fetch indexes for the response description.
         let index_rows: Vec<IndexRow> = sqlx::query_as(
-            r"SELECT index_name, index_type, key_schema, projection,
+            r"SELECT index_name, index_id, index_type, key_schema, projection,
                       index_status, provisioned_throughput
                FROM indexes WHERE table_id = $1",
         )
@@ -69,7 +69,7 @@ impl PostgresEngine {
         .map_err(|e| StorageError::Internal(e.to_string()))?;
         let delay_secs = delay_row.0;
 
-        let index_names: Vec<String> = index_rows.iter().map(|r| r.index_name.clone()).collect();
+        let index_ids: Vec<String> = index_rows.iter().map(|r| r.index_id.clone()).collect();
 
         if delay_secs < 1.0 {
             // Synchronous delete: remove tags, catalog row, and data tables inline.
@@ -96,11 +96,11 @@ impl PostgresEngine {
                 .begin()
                 .await
                 .map_err(|e| StorageError::Internal(e.to_string()))?;
-            for idx_name in &index_names {
-                Self::drop_index_data_table(&mut data_tx, account_id, &input.table_name, idx_name)
+            for idx_id in &index_ids {
+                Self::drop_index_data_table(&mut data_tx, idx_id)
                     .await?;
             }
-            Self::drop_data_table(&mut data_tx, account_id, &input.table_name).await?;
+            Self::drop_data_table(&mut data_tx, &row.table_id).await?;
             data_tx
                 .commit()
                 .await

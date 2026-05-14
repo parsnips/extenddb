@@ -199,6 +199,7 @@ impl PostgresEngine {
                     pk_hash(&pk_text),
                     &key_info.account_id,
                     &key_info.table_name,
+                    &key_info.table_id,
                     &key_info.key_schema,
                     &key_info.attribute_definitions,
                     indexes,
@@ -319,8 +320,7 @@ async fn execute_transact_write_op(
             if !indexes.is_empty() {
                 sync_indexes(
                     tx,
-                    &key_info.account_id,
-                    &key_info.table_name,
+                    &key_info.table_id,
                     &key_info.key_schema,
                     &key_info.attribute_definitions,
                     indexes,
@@ -364,8 +364,7 @@ async fn execute_transact_write_op(
             if !indexes.is_empty() {
                 sync_indexes(
                     tx,
-                    &key_info.account_id,
-                    &key_info.table_name,
+                    &key_info.table_id,
                     &key_info.key_schema,
                     &key_info.attribute_definitions,
                     indexes,
@@ -417,8 +416,7 @@ async fn execute_transact_write_op(
             if !indexes.is_empty() {
                 sync_indexes(
                     tx,
-                    &key_info.account_id,
-                    &key_info.table_name,
+                    &key_info.table_id,
                     &key_info.key_schema,
                     &key_info.attribute_definitions,
                     indexes,

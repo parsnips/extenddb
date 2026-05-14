@@ -31,12 +31,11 @@ impl PostgresEngine {
     /// into the DDL beyond the validated table name.
     pub(crate) async fn create_data_table(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        account_id: &str,
-        table_name: &str,
+        table_id: &str,
         key_schema: &[KeySchemaElement],
         attr_defs: &[AttributeDefinition],
     ) -> Result<(), StorageError> {
-        let ddb_table = data_table_name(account_id, table_name);
+        let ddb_table = data_table_name(table_id);
         let sk_infos = all_sort_key_info(key_schema, attr_defs);
 
         let ddl = if sk_infos.is_empty() {
@@ -103,10 +102,9 @@ impl PostgresEngine {
     /// Returns [`StorageError::Internal`] if the DDL execution fails.
     pub(crate) async fn drop_data_table(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        account_id: &str,
-        table_name: &str,
+        table_id: &str,
     ) -> Result<(), StorageError> {
-        let ddb_table = data_table_name(account_id, table_name);
+        let ddb_table = data_table_name(table_id);
         let ddl = format!("DROP TABLE IF EXISTS {ddb_table}");
         sqlx::query(&ddl)
             .execute(&mut **tx)
@@ -130,15 +128,13 @@ impl PostgresEngine {
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn create_index_data_table(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        account_id: &str,
-        table_name: &str,
-        index_name: &str,
+        index_id: &str,
         index_key_schema: &[KeySchemaElement],
         attr_defs: &[AttributeDefinition],
         base_key_schema: &[KeySchemaElement],
         base_attr_defs: &[AttributeDefinition],
     ) -> Result<(), StorageError> {
-        let idx_table = index_table_name(account_id, table_name, index_name);
+        let idx_table = index_table_name(index_id);
 
         // Determine base table sort key columns for the uniqueness constraint
         let base_sks = all_sort_key_info(base_key_schema, base_attr_defs);
@@ -229,11 +225,9 @@ impl PostgresEngine {
     /// Drop a GSI/LSI data table.
     pub(crate) async fn drop_index_data_table(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        account_id: &str,
-        table_name: &str,
-        index_name: &str,
+        index_id: &str,
     ) -> Result<(), StorageError> {
-        let idx_table = index_table_name(account_id, table_name, index_name);
+        let idx_table = index_table_name(index_id);
         let ddl = format!("DROP TABLE IF EXISTS {idx_table}");
         sqlx::query(&ddl)
             .execute(&mut **tx)
@@ -346,8 +340,8 @@ impl PostgresEngine {
         table_id: &str,
         index_name: &str,
     ) -> Result<IndexInfo, StorageError> {
-        let idx_row: Option<(String, serde_json::Value, serde_json::Value)> = sqlx::query_as(
-            "SELECT index_type, key_schema, projection FROM indexes WHERE table_id = $1 AND index_name = $2",
+        let idx_row: Option<(String, String, serde_json::Value, serde_json::Value)> = sqlx::query_as(
+            "SELECT index_type, index_id, key_schema, projection FROM indexes WHERE table_id = $1 AND index_name = $2",
         )
         .bind(table_id)
         .bind(index_name)
@@ -355,7 +349,7 @@ impl PostgresEngine {
         .await
         .map_err(|e| StorageError::Internal(e.to_string()))?;
 
-        let (idx_type_str, ks_json, proj_json) =
+        let (idx_type_str, idx_id, ks_json, proj_json) =
             idx_row.ok_or_else(|| StorageError::IndexNotFound(index_name.to_owned()))?;
 
         let index_type = match idx_type_str.as_str() {
@@ -375,6 +369,7 @@ impl PostgresEngine {
 
         Ok(IndexInfo {
             index_name: index_name.to_owned(),
+            index_id: idx_id,
             index_type,
             key_schema,
             projection,

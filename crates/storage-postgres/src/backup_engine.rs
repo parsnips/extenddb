@@ -76,7 +76,7 @@ impl BackupEngine for PostgresEngine {
         );
 
         // Snapshot items from the data table.
-        let ddb_table = data_table_name(account_id, table_name);
+        let ddb_table = data_table_name(&table_id);
         let ddb_table_unquoted = ddb_table.trim_matches('"');
         let has_sk: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM information_schema.columns \
@@ -394,8 +394,7 @@ impl BackupEngine for PostgresEngine {
         let desc = self.create_table(account_id, create_input).await?;
 
         let new_table_id = &desc.table_id;
-        let _ = new_table_id; // table_id not used for data table naming
-        let ddb_table = data_table_name(account_id, target_table_name);
+        let ddb_table = data_table_name(new_table_id);
         let ddb_table_unquoted = ddb_table.trim_matches('"');
 
         // Do NOT force ACTIVE — let the control plane handle the transition
