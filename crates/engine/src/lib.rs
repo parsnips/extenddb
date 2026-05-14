@@ -67,8 +67,6 @@ use std::sync::Arc;
 
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::limits::LimitsConfig;
-use extenddb_storage::DataEngine;
-use extenddb_storage::MetadataEngine;
 
 /// Check whether an operation name is recognized by the dispatch table.
 ///
@@ -117,8 +115,6 @@ pub fn is_known_operation(operation: &str) -> bool {
             | "RestoreTableToPointInTime"
     )
 }
-use extenddb_storage::StreamEngine;
-use extenddb_storage::TableEngine;
 use serde::Serialize;
 
 /// Serialize an operation output to JSON, logging and sanitizing any serialization failure.
@@ -195,8 +191,8 @@ impl DispatchResult {
 /// pre-fetched value instead of calling `storage.table_key_info()` directly.
 /// New per-request catalog roundtrips require justification in the discussion
 /// file and principal reviewer approval.
-pub struct OperationContext<S: TableEngine> {
-    pub storage: Arc<S>,
+pub struct OperationContext {
+    pub storage: Arc<dyn extenddb_storage::StorageEngine>,
     pub limits: Arc<LimitsConfig>,
     pub region: Arc<str>,
     pub account_id: Arc<str>,
@@ -212,7 +208,7 @@ pub struct OperationContext<S: TableEngine> {
     pub pre_fetched_key_info: Option<extenddb_core::types::TableKeyInfo>,
 }
 
-impl<S: TableEngine> OperationContext<S> {
+impl OperationContext {
     /// Return pre-fetched `TableKeyInfo` if available and matching the requested
     /// table, otherwise fetch from storage. This is the single entry point for
     /// obtaining `TableKeyInfo` in engine handlers (P118 Catalog Query Discipline).
@@ -234,17 +230,10 @@ impl<S: TableEngine> OperationContext<S> {
 /// Dispatch an operation by name.
 ///
 /// Returns the JSON response body and sideband metrics for the metrics collector.
-pub async fn dispatch<
-    S: TableEngine
-        + DataEngine
-        + MetadataEngine
-        + StreamEngine
-        + extenddb_storage::BackupEngine
-        + 'static,
->(
+pub async fn dispatch(
     operation: &str,
     body: serde_json::Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
     server_addr: &str,
 ) -> Result<DispatchResult, DynamoDbError> {
     match operation {
