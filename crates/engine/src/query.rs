@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::expression::PathElement;
-use extenddb_core::expression::{parse_key_condition, parse_projection, tokenize_with_limit};
+use extenddb_core::expression::{parse_key_condition, parse_projection};
 use extenddb_core::types::{
     IndexType, QueryInput, QueryOutput, Select, TableKeyInfo, item_size_bytes,
 };
@@ -110,7 +110,7 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
                 .to_owned(),
         )
     })?;
-    let tokens = tokenize_with_limit(kce_str, ctx.limits.max_expression_tokens)?;
+    let tokens = crate::expression_helpers::tokenize_expression(kce_str, &ctx.limits)?;
     let mut key_condition = parse_key_condition(&tokens)?;
 
     // Correct PK/SK assignment when both clauses are equality comparisons.
@@ -156,7 +156,7 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
 
     // Parse ProjectionExpression
     let projection = if let Some(ref proj_str) = input.projection_expression {
-        let proj_tokens = tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
+        let proj_tokens = crate::expression_helpers::tokenize_expression(proj_str, &ctx.limits)?;
         Some(parse_projection(&proj_tokens)?)
     } else {
         None

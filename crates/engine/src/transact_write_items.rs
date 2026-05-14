@@ -260,9 +260,9 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             upd.expression_attribute_names.as_ref(),
             upd.expression_attribute_values.as_ref(),
         );
-        let update_tokens = extenddb_core::expression::tokenize_with_limit(
+        let update_tokens = crate::expression_helpers::tokenize_expression(
             &upd.update_expression,
-            ctx.limits.max_expression_tokens,
+            &ctx.limits,
         )?;
         let actions = parse_update(&update_tokens)?;
         validate_no_key_updates(&actions, &key_info, &maps)?;
@@ -294,9 +294,9 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             cc.expression_attribute_names.as_ref(),
             cc.expression_attribute_values.as_ref(),
         );
-        let tokens = extenddb_core::expression::tokenize_with_limit(
+        let tokens = crate::expression_helpers::tokenize_expression(
             &cc.condition_expression,
-            ctx.limits.max_expression_tokens,
+            &ctx.limits,
         )?;
         let condition = extenddb_core::expression::parse_condition_with_depth_limit(
             &tokens,

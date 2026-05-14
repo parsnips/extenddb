@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::expression::{
-    ExpressionMaps, PathElement, UpdateAction, parse_update, tokenize_with_limit,
+    ExpressionMaps, PathElement, UpdateAction, parse_update,
 };
 use extenddb_core::types::{
     AttributeValue, Item, ReturnValues, TableKeyInfo, UpdateItemInput, UpdateItemOutput,
@@ -111,7 +111,7 @@ pub async fn handle_update_item<S: TableEngine + DataEngine>(
 
     // Parse the update expression
     let update_expr = effective_update_expr.as_deref().unwrap_or("");
-    let update_tokens = tokenize_with_limit(update_expr, ctx.limits.max_expression_tokens)?;
+    let update_tokens = crate::expression_helpers::tokenize_expression(update_expr, &ctx.limits)?;
     let actions = parse_update(&update_tokens)?;
 
     // Validate that no update action targets a key attribute (REQ-DATA-003)

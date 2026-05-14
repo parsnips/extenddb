@@ -6,7 +6,7 @@
 use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
-use extenddb_core::expression::{parse_projection, tokenize_with_limit};
+use extenddb_core::expression::parse_projection;
 use extenddb_core::types::{
     IndexType, ScanInput, ScanOutput, Select, TableKeyInfo, item_size_bytes,
 };
@@ -135,7 +135,7 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
 
     // Parse ProjectionExpression
     let projection = if let Some(ref proj_str) = input.projection_expression {
-        let proj_tokens = tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
+        let proj_tokens = crate::expression_helpers::tokenize_expression(proj_str, &ctx.limits)?;
         Some(parse_projection(&proj_tokens)?)
     } else {
         None
