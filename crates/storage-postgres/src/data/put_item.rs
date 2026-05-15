@@ -58,10 +58,6 @@ impl PostgresEngine {
                 let select_sql = format!(
                     "SELECT item_data FROM {ddb_table} WHERE pk = $1 AND {sk_col} = $2 FOR UPDATE"
                 );
-                let upsert_sql = format!(
-                    "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
-                     ON CONFLICT (pk, {sk_col}) DO UPDATE SET item_data = EXCLUDED.item_data"
-                );
 
                 let mut tx = self
                     .data_pool
@@ -81,6 +77,11 @@ impl PostgresEngine {
                         }
                         Err(e) => return Err(e),
                     }
+                    // Row exists, condition passed — update in place.
+                    let update_sql = format!(
+                        "UPDATE {ddb_table} SET item_data = $3 WHERE pk = $1 AND {sk_col} = $2"
+                    );
+                    bind_sk_execute!(&update_sql, pk_text.as_str(), &sk, &item_json, &mut *tx)?;
                 } else {
                     // No existing item — condition checks against empty item
                     let empty = std::collections::BTreeMap::new();
@@ -91,9 +92,24 @@ impl PostgresEngine {
                         }
                         Err(e) => return Err(e),
                     }
+                    // Condition passed against empty — atomic insert, fail if someone beat us.
+                    let insert_sql = format!(
+                        "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
+                         ON CONFLICT (pk, {sk_col}) DO NOTHING"
+                    );
+                    let result =
+                        bind_sk_execute!(&insert_sql, pk_text.as_str(), &sk, &item_json, &mut *tx)?;
+                    if result.rows_affected() == 0 {
+                        // Another transaction inserted between our SELECT and INSERT.
+                        // Fetch the winner to return with ConditionFailed.
+                        let winner: Option<(serde_json::Value,)> =
+                            bind_sk_fetch_optional!(&select_sql, pk_text.as_str(), &sk, &mut *tx)?;
+                        let winner_item = winner
+                            .map(|(v,)| json_to_item(v))
+                            .transpose()?;
+                        return Err(StorageError::ConditionFailed(winner_item));
+                    }
                 }
-
-                bind_sk_execute!(&upsert_sql, pk_text.as_str(), &sk, &item_json, &mut *tx)?;
 
                 // Sync GSI/LSI update within transaction (D-4).
                 let old_item_for_idx = if !indexes.is_empty() {
@@ -178,10 +194,6 @@ impl PostgresEngine {
             if needs_tx {
                 let select_sql =
                     format!("SELECT item_data FROM {ddb_table} WHERE pk = $1 FOR UPDATE");
-                let upsert_sql = format!(
-                    "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
-                     ON CONFLICT (pk) DO UPDATE SET item_data = EXCLUDED.item_data"
-                );
 
                 let mut tx = self
                     .data_pool
@@ -204,6 +216,16 @@ impl PostgresEngine {
                         }
                         Err(e) => return Err(e),
                     }
+                    // Row exists, condition passed — update in place.
+                    let update_sql = format!(
+                        "UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1"
+                    );
+                    sqlx::query(&update_sql)
+                        .bind(pk_text.as_str())
+                        .bind(&item_json)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| StorageError::Internal(e.to_string()))?;
                 } else {
                     let empty = std::collections::BTreeMap::new();
                     match check_condition(condition, &empty, maps) {
@@ -213,14 +235,30 @@ impl PostgresEngine {
                         }
                         Err(e) => return Err(e),
                     }
+                    // Condition passed against empty — atomic insert, fail if someone beat us.
+                    let insert_sql = format!(
+                        "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
+                         ON CONFLICT (pk) DO NOTHING"
+                    );
+                    let result = sqlx::query(&insert_sql)
+                        .bind(pk_text.as_str())
+                        .bind(&item_json)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| StorageError::Internal(e.to_string()))?;
+                    if result.rows_affected() == 0 {
+                        // Another transaction inserted between our SELECT and INSERT.
+                        let winner: Option<(serde_json::Value,)> = sqlx::query_as(&select_sql)
+                            .bind(pk_text.as_str())
+                            .fetch_optional(&mut *tx)
+                            .await
+                            .map_err(|e| StorageError::Internal(e.to_string()))?;
+                        let winner_item = winner
+                            .map(|(v,)| json_to_item(v))
+                            .transpose()?;
+                        return Err(StorageError::ConditionFailed(winner_item));
+                    }
                 }
-
-                sqlx::query(&upsert_sql)
-                    .bind(pk_text.as_str())
-                    .bind(&item_json)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(|e| StorageError::Internal(e.to_string()))?;
 
                 // Sync GSI/LSI update within transaction (D-4).
                 let old_item_for_idx = if !indexes.is_empty() {

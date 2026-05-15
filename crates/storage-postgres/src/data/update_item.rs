@@ -132,22 +132,50 @@ impl PostgresEngine {
                 .ok_or_else(|| StorageError::Internal("missing sort key".to_owned()))?;
             let sk = parse_sk(sk_value, sk_type)?;
             let sk_col = sk_column(sk_type);
-            let upsert_sql = format!(
-                "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
-                 ON CONFLICT (pk, {sk_col}) DO UPDATE SET item_data = EXCLUDED.item_data"
-            );
-            bind_sk_execute!(&upsert_sql, pk_text.as_ref(), &sk, &item_json, &mut *tx)?;
+            if old_json.is_some() {
+                // Row existed — update in place.
+                let update_sql = format!(
+                    "UPDATE {ddb_table} SET item_data = $3 WHERE pk = $1 AND {sk_col} = $2"
+                );
+                bind_sk_execute!(&update_sql, pk_text.as_ref(), &sk, &item_json, &mut *tx)?;
+            } else {
+                // Row didn't exist (upsert) — atomic insert, fail if someone beat us.
+                let insert_sql = format!(
+                    "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
+                     ON CONFLICT (pk, {sk_col}) DO NOTHING"
+                );
+                let result =
+                    bind_sk_execute!(&insert_sql, pk_text.as_ref(), &sk, &item_json, &mut *tx)?;
+                if result.rows_affected() == 0 {
+                    return Err(StorageError::ConditionFailed(None));
+                }
+            }
         } else {
-            let upsert_sql = format!(
-                "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
-                 ON CONFLICT (pk) DO UPDATE SET item_data = EXCLUDED.item_data"
-            );
-            sqlx::query(&upsert_sql)
-                .bind(pk_text.as_ref())
-                .bind(&item_json)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| StorageError::Internal(e.to_string()))?;
+            if old_json.is_some() {
+                let update_sql = format!(
+                    "UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1"
+                );
+                sqlx::query(&update_sql)
+                    .bind(pk_text.as_ref())
+                    .bind(&item_json)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| StorageError::Internal(e.to_string()))?;
+            } else {
+                let insert_sql = format!(
+                    "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
+                     ON CONFLICT (pk) DO NOTHING"
+                );
+                let result = sqlx::query(&insert_sql)
+                    .bind(pk_text.as_ref())
+                    .bind(&item_json)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| StorageError::Internal(e.to_string()))?;
+                if result.rows_affected() == 0 {
+                    return Err(StorageError::ConditionFailed(None));
+                }
+            }
         }
 
         // Sync GSI/LSI update within transaction (D-4).
