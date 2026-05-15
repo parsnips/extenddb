@@ -104,6 +104,24 @@ pub fn validate_create_table(
     Ok(())
 }
 
+/// Format KeySchema elements in DynamoDB's Java-toString style for error messages.
+fn format_key_schema_value(ks: &[KeySchemaElement]) -> String {
+    let elements: Vec<String> = ks
+        .iter()
+        .map(|e| {
+            let kt = match e.key_type {
+                KeyType::Hash => "HASH",
+                KeyType::Range => "RANGE",
+            };
+            format!(
+                "KeySchemaElement(attributeName={}, keyType={})",
+                e.attribute_name, kt
+            )
+        })
+        .collect();
+    format!("[{}]", elements.join(", "))
+}
+
 /// Maximum number of HASH or RANGE elements in a multi-part key schema.
 const MAX_MULTIPART_KEY_ELEMENTS: usize = 4;
 
@@ -129,15 +147,23 @@ fn validate_key_schema(
     } else {
         // Standard DynamoDB: 1 HASH + optional 1 RANGE
         if input.key_schema.len() > 2 {
-            return Err(DynamoDbError::ValidationException(error_message(
-                ErrorMessageKey::KeySchemaTooMany,
-                &[],
+            let ks_repr = format_key_schema_value(&input.key_schema);
+            return Err(DynamoDbError::ValidationException(format!(
+                "1 validation error detected: Value '{ks_repr}' at 'keySchema' failed to satisfy constraint: \
+                 Member must have length less than or equal to 2"
             )));
         }
-        if input.key_schema.len() == 2 && input.key_schema[1].key_type != KeyType::Range {
-            return Err(DynamoDbError::ValidationException(
-                "Second KeySchemaElement is not a RANGE type".to_owned(),
-            ));
+        if input.key_schema.len() == 2 {
+            if input.key_schema[1].key_type != KeyType::Range {
+                return Err(DynamoDbError::ValidationException(
+                    "Second KeySchemaElement is not a RANGE type".to_owned(),
+                ));
+            }
+            if input.key_schema[0].attribute_name == input.key_schema[1].attribute_name {
+                return Err(DynamoDbError::ValidationException(
+                    "Invalid KeySchema: Some index key attribute have no definition".to_owned(),
+                ));
+            }
         }
     }
     Ok(())
@@ -775,7 +801,7 @@ fn validate_lsi_requires_range_key(input: &CreateTableInput) -> Result<(), Dynam
         && input.key_schema[1].key_type == KeyType::Range;
     if !has_range {
         return Err(DynamoDbError::ValidationException(
-            "One or more parameter values were invalid: Table KeySchema: The AttributeSchema of the table must include a RANGE key when Local Secondary Indexes are specified".to_owned(),
+            "One or more parameter values were invalid: Table KeySchema does not have a range key, which is required when specifying a LocalSecondaryIndex".to_owned(),
         ));
     }
     Ok(())
