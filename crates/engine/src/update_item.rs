@@ -13,6 +13,7 @@ use serde_json::Value;
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::expression::{
     ExpressionMaps, PathElement, UpdateAction, parse_update_from, tokenize_for,
+    validate_no_reserved_words,
 };
 use extenddb_core::types::{
     AttributeValue, Item, ReturnValues, TableKeyInfo, UpdateItemInput, UpdateItemOutput,
@@ -108,6 +109,9 @@ pub async fn handle_update_item<S: TableEngine + DataEngine>(
     // Parse the update expression
     let update_expr = effective_update_expr.as_deref().unwrap_or("");
     let update_tokens = tokenize_for(update_expr, ctx.limits.max_expression_tokens, "UpdateExpression")?;
+    if ctx.limits.enforce_reserved_keywords {
+        validate_no_reserved_words(&update_tokens)?;
+    }
     let actions = parse_update_from(&update_tokens, update_expr)?;
 
     if input.expected.is_none() || input.expected.as_ref().is_some_and(|m| m.is_empty()) {
