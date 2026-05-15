@@ -199,7 +199,7 @@ pub(crate) fn parse_optional_condition(
     match expr {
         Some(s) if !s.is_empty() => {
             let tokens =
-                extenddb_core::expression::tokenize_with_limit(s, limits.max_expression_tokens)?;
+                crate::expression_helpers::tokenize_expression(s, limits)?;
             let ast = extenddb_core::expression::parse_condition_with_depth_limit(
                 &tokens,
                 limits.max_expression_depth,

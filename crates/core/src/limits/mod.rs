@@ -58,6 +58,9 @@ pub struct LimitsConfig {
     /// Maximum export item count.
     #[serde(default = "default_max_export_item_count")]
     pub max_export_item_count: u64,
+    /// Reject bare reserved keywords in expressions (DynamoDB-compatible default: true).
+    #[serde(default = "default_enforce_reserved_keywords")]
+    pub enforce_reserved_keywords: bool,
 }
 
 impl Default for LimitsConfig {
@@ -84,6 +87,7 @@ impl Default for LimitsConfig {
             max_import_file_bytes: default_max_import_file_bytes(),
             max_import_item_count: default_max_import_item_count(),
             max_export_item_count: default_max_export_item_count(),
+            enforce_reserved_keywords: default_enforce_reserved_keywords(),
         }
     }
 }
@@ -149,4 +153,7 @@ fn default_max_import_item_count() -> u64 {
 }
 fn default_max_export_item_count() -> u64 {
     10_000_000
+}
+fn default_enforce_reserved_keywords() -> bool {
+    true
 }

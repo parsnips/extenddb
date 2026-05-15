@@ -99,6 +99,8 @@ pub fn validate_create_table(
     validate_gsi_provisioned_throughput(input)?;
     validate_gsi_count(input, limits)?;
     validate_lsi_count(input, limits)?;
+    validate_lsi_requires_range_key(input)?;
+    validate_unique_index_names(input)?;
     Ok(())
 }
 
@@ -704,6 +706,12 @@ pub fn validate_key_sizes(
 ) -> Result<(), DynamoDbError> {
     for ks in key_schema {
         if let Some(value) = item.get(&ks.attribute_name) {
+            if matches!(value, AttributeValue::S(s) if s.is_empty()) {
+                return Err(DynamoDbError::ValidationException(format!(
+                    "One or more parameter values are not valid. The AttributeValue for a key attribute cannot contain an empty string value. Key: {}",
+                    ks.attribute_name
+                )));
+            }
             let size = key_value_byte_size(value);
             let (max_size, key_label) = match ks.key_type {
                 KeyType::Hash => (limits.max_partition_key_size_bytes, "partition key"),
@@ -756,6 +764,24 @@ pub fn validate_item_numbers(item: &Item) -> Result<(), DynamoDbError> {
     Ok(())
 }
 
+fn validate_lsi_requires_range_key(input: &CreateTableInput) -> Result<(), DynamoDbError> {
+    let has_lsi = input
+        .local_secondary_indexes
+        .as_ref()
+        .is_some_and(|v| !v.is_empty());
+    if !has_lsi {
+        return Ok(());
+    }
+    let has_range = input.key_schema.len() >= 2
+        && input.key_schema[1].key_type == KeyType::Range;
+    if !has_range {
+        return Err(DynamoDbError::ValidationException(
+            "One or more parameter values were invalid: Table KeySchema: The AttributeSchema of the table must include a RANGE key when Local Secondary Indexes are specified".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_attribute_number(value: &AttributeValue) -> Result<(), DynamoDbError> {
     match value {
         AttributeValue::N(n) => {
@@ -777,6 +803,31 @@ fn validate_attribute_number(value: &AttributeValue) -> Result<(), DynamoDbError
             }
         }
         _ => {}
+    }
+    Ok(())
+}
+
+fn validate_unique_index_names(input: &CreateTableInput) -> Result<(), DynamoDbError> {
+    let mut names = std::collections::HashSet::new();
+    if let Some(gsis) = &input.global_secondary_indexes {
+        for gsi in gsis {
+            if !names.insert(&gsi.index_name) {
+                return Err(DynamoDbError::ValidationException(format!(
+                    "One or more parameter values were invalid: Duplicate index name: {}",
+                    gsi.index_name
+                )));
+            }
+        }
+    }
+    if let Some(lsis) = &input.local_secondary_indexes {
+        for lsi in lsis {
+            if !names.insert(&lsi.index_name) {
+                return Err(DynamoDbError::ValidationException(format!(
+                    "One or more parameter values were invalid: Duplicate index name: {}",
+                    lsi.index_name
+                )));
+            }
+        }
     }
     Ok(())
 }

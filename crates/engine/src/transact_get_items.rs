@@ -3,6 +3,8 @@
 
 //! `TransactGetItems` operation handler.
 
+use std::collections::HashSet;
+
 use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
@@ -49,6 +51,16 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
     }
 
     // Resolve table key info for each item
+    let mut seen_keys: HashSet<Vec<u8>> = HashSet::with_capacity(input.transact_items.len());
+    for tgi in &input.transact_items {
+        let dedup_key = serde_json::to_vec(&(&tgi.get.table_name, &tgi.get.key)).unwrap_or_default();
+        if !seen_keys.insert(dedup_key) {
+            return Err(DynamoDbError::ValidationException(
+                "Transaction request cannot include multiple operations on one item".to_owned(),
+            ));
+        }
+    }
+
     let mut key_infos = Vec::with_capacity(input.transact_items.len());
     for tgi in &input.transact_items {
         let key_info = ctx

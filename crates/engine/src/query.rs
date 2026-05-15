@@ -10,7 +10,7 @@ use serde_json::Value;
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::expression::PathElement;
 use extenddb_core::expression::{
-    parse_key_condition, parse_projection, tokenize_for, tokenize_with_limit, ExpressionMaps,
+    parse_key_condition, parse_projection, tokenize_for, ExpressionMaps,
 };
 use extenddb_core::types::{
     IndexType, KeyType, QueryInput, QueryOutput, Select, TableKeyInfo, item_size_bytes,
