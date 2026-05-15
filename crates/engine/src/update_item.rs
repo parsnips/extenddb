@@ -42,10 +42,21 @@ pub async fn handle_update_item<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    crate::validate_enum_fields(&body, &[
-        ("ReturnValues", "returnValues", &["NONE", "ALL_OLD", "ALL_NEW", "UPDATED_OLD", "UPDATED_NEW"]),
-        ("ReturnConsumedCapacity", "returnConsumedCapacity", &["INDEXES", "TOTAL", "NONE"]),
-    ])?;
+    crate::validate_enum_fields(
+        &body,
+        &[
+            (
+                "ReturnValues",
+                "returnValues",
+                &["NONE", "ALL_OLD", "ALL_NEW", "UPDATED_OLD", "UPDATED_NEW"],
+            ),
+            (
+                "ReturnConsumedCapacity",
+                "returnConsumedCapacity",
+                &["INDEXES", "TOTAL", "NONE"],
+            ),
+        ],
+    )?;
     let input: UpdateItemInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     extenddb_core::validation::validate_table_name(&input.table_name, &ctx.limits)?;
@@ -114,7 +125,11 @@ pub async fn handle_update_item<S: TableEngine + DataEngine>(
 
     // Parse the update expression
     let update_expr = effective_update_expr.as_deref().unwrap_or("");
-    let update_tokens = tokenize_for(update_expr, ctx.limits.max_expression_tokens, "UpdateExpression")?;
+    let update_tokens = tokenize_for(
+        update_expr,
+        ctx.limits.max_expression_tokens,
+        "UpdateExpression",
+    )?;
     if ctx.limits.enforce_reserved_keywords {
         validate_no_reserved_words(&update_tokens)?;
     }
@@ -123,9 +138,12 @@ pub async fn handle_update_item<S: TableEngine + DataEngine>(
     if input.expected.is_none() || input.expected.as_ref().is_some_and(|m| m.is_empty()) {
         let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
         extenddb_core::expression::validate_unused_attributes(
-            &maps.names, &maps.values, &exprs,
+            &maps.names,
+            &maps.values,
+            &exprs,
             &actions.iter().collect::<Vec<_>>(),
-            &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
         )?;
     }
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
-use extenddb_core::expression::{parse_projection, tokenize_with_limit, ExpressionMaps};
+use extenddb_core::expression::{ExpressionMaps, parse_projection, tokenize_with_limit};
 use extenddb_core::types::{
     IndexType, ScanInput, ScanOutput, Select, TableKeyInfo, item_size_bytes,
 };
@@ -137,7 +137,10 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
     }
 
     let has_pe = input.projection_expression.is_some();
-    let has_atg = input.attributes_to_get.as_ref().is_some_and(|a| !a.is_empty());
+    let has_atg = input
+        .attributes_to_get
+        .as_ref()
+        .is_some_and(|a| !a.is_empty());
 
     if has_pe && has_atg {
         return Err(DynamoDbError::ValidationException(
@@ -159,10 +162,16 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
             let (expr, fmaps) = desugar_filter(sf, cond_op)?;
             (Some(expr), Some(fmaps))
         } else {
-            (parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?, None)
+            (
+                parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?,
+                None,
+            )
         }
     } else {
-        (parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?, None)
+        (
+            parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?,
+            None,
+        )
     };
 
     // Parse ProjectionExpression or desugar legacy AttributesToGet
@@ -207,8 +216,12 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
             }
         }
         extenddb_core::expression::validate_unused_attributes(
-            &maps.names, &maps.values, &exprs, &[],
-            &extra_names, &std::collections::HashSet::new(),
+            &maps.names,
+            &maps.values,
+            &exprs,
+            &[],
+            &extra_names,
+            &std::collections::HashSet::new(),
         )?;
     }
 

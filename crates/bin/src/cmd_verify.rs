@@ -40,7 +40,7 @@ pub async fn run(args: VerifyArgs) -> anyhow::Result<()> {
         backend,
         app_config.storage.connection_config(),
     )
-    .map_err(|e| anyhow::anyhow!("Failed to parse connection string: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to parse connection string: {e}"))?;
 
     let mut errors = 0u32;
 
@@ -62,7 +62,7 @@ pub async fn run(args: VerifyArgs) -> anyhow::Result<()> {
             store
         }
         Err(e) => {
-            println!("  FAIL: Cannot connect to catalog database: {}", e);
+            println!("  FAIL: Cannot connect to catalog database: {e}");
             anyhow::bail!("Cannot proceed without catalog connection");
         }
     };
@@ -83,7 +83,7 @@ pub async fn run(args: VerifyArgs) -> anyhow::Result<()> {
             errors += 1;
         }
         Err(e) => {
-            println!("  FAIL: Failed to read catalog version: {:?}", e);
+            println!("  FAIL: Failed to read catalog version: {e:?}");
             errors += 1;
         }
     }
@@ -97,12 +97,12 @@ pub async fn run(args: VerifyArgs) -> anyhow::Result<()> {
         app_config.storage.connection_config(),
     )
     .await
-    .map_err(|e| anyhow::anyhow!("Failed to create diagnostics store: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to create diagnostics store: {e}"))?;
 
     match diag_store.test_data_database_connection().await {
         Ok(db_name) => println!("  OK: Connected to data database '{db_name}'."),
         Err(e) => {
-            println!("  FAIL: {}", e);
+            println!("  FAIL: {e}");
             errors += 1;
         }
     }
@@ -111,10 +111,10 @@ pub async fn run(args: VerifyArgs) -> anyhow::Result<()> {
     println!("--- Enumerating tables...");
 
     let table_count = diag_store.count_tables().await.unwrap_or(0);
-    println!("  Tables: {}", table_count);
+    println!("  Tables: {table_count}");
 
     let index_count = diag_store.count_indexes().await.unwrap_or(0);
-    println!("  Indexes: {}", index_count);
+    println!("  Indexes: {index_count}");
 
     println!();
     if errors == 0 {

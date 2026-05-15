@@ -797,8 +797,7 @@ fn validate_lsi_requires_range_key(input: &CreateTableInput) -> Result<(), Dynam
     if !has_lsi {
         return Ok(());
     }
-    let has_range = input.key_schema.len() >= 2
-        && input.key_schema[1].key_type == KeyType::Range;
+    let has_range = input.key_schema.len() >= 2 && input.key_schema[1].key_type == KeyType::Range;
     if !has_range {
         return Err(DynamoDbError::ValidationException(
             "One or more parameter values were invalid: Table KeySchema does not have a range key, which is required when specifying a LocalSecondaryIndex".to_owned(),

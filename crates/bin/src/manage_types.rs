@@ -87,7 +87,7 @@ pub enum ManageCommand {
         user_name: String,
     },
     /// Create an access key (self-service or admin).
-    /// When authenticating as an IAM user (--user account_id/user_name),
+    /// When authenticating as an IAM user (--user `account_id/user_name`),
     /// --account-id and --user-name are inferred if omitted.
     CreateAccessKey {
         #[arg(long)]

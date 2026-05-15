@@ -123,7 +123,9 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
             let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM tables")
                 .fetch_one(&pool)
                 .await
-                .map_err(|e| extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string()))?;
+                .map_err(|e| {
+                    extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string())
+                })?;
             Ok(count)
         })
     }
@@ -136,7 +138,9 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
             let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM indexes")
                 .fetch_one(&pool)
                 .await
-                .map_err(|e| extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string()))?;
+                .map_err(|e| {
+                    extenddb_storage::diagnostics::DiagError::QueryFailed(e.to_string())
+                })?;
             Ok(count)
         })
     }
@@ -170,7 +174,9 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
                         .connect(&conn)
                         .await
                         .map_err(|e| {
-                            extenddb_storage::diagnostics::DiagError::ConnectionFailed(e.to_string())
+                            extenddb_storage::diagnostics::DiagError::ConnectionFailed(
+                                e.to_string(),
+                            )
                         })?;
                     Ok(name)
                 }

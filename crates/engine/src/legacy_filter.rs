@@ -67,11 +67,7 @@ pub fn desugar_key_conditions(
 
     let sk_condition = if let Some(range_name) = range_attr {
         if let Some(range_cond) = conditions.get(range_name) {
-            Some(desugar_sk_condition(
-                range_cond,
-                range_name,
-                &mut values,
-            )?)
+            Some(desugar_sk_condition(range_cond, range_name, &mut values)?)
         } else {
             None
         }

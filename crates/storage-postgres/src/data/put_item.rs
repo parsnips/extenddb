@@ -104,9 +104,7 @@ impl PostgresEngine {
                         // Fetch the winner to return with ConditionFailed.
                         let winner: Option<(serde_json::Value,)> =
                             bind_sk_fetch_optional!(&select_sql, pk_text.as_str(), &sk, &mut *tx)?;
-                        let winner_item = winner
-                            .map(|(v,)| json_to_item(v))
-                            .transpose()?;
+                        let winner_item = winner.map(|(v,)| json_to_item(v)).transpose()?;
                         return Err(StorageError::ConditionFailed(winner_item));
                     }
                 }
@@ -217,9 +215,7 @@ impl PostgresEngine {
                         Err(e) => return Err(e),
                     }
                     // Row exists, condition passed — update in place.
-                    let update_sql = format!(
-                        "UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1"
-                    );
+                    let update_sql = format!("UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1");
                     sqlx::query(&update_sql)
                         .bind(pk_text.as_str())
                         .bind(&item_json)
@@ -253,9 +249,7 @@ impl PostgresEngine {
                             .fetch_optional(&mut *tx)
                             .await
                             .map_err(|e| StorageError::Internal(e.to_string()))?;
-                        let winner_item = winner
-                            .map(|(v,)| json_to_item(v))
-                            .transpose()?;
+                        let winner_item = winner.map(|(v,)| json_to_item(v)).transpose()?;
                         return Err(StorageError::ConditionFailed(winner_item));
                     }
                 }

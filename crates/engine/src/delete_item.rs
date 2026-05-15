@@ -29,10 +29,17 @@ pub async fn handle_delete_item<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    crate::validate_enum_fields(&body, &[
-        ("ReturnValues", "returnValues", &["NONE", "ALL_OLD"]),
-        ("ReturnConsumedCapacity", "returnConsumedCapacity", &["INDEXES", "TOTAL", "NONE"]),
-    ])?;
+    crate::validate_enum_fields(
+        &body,
+        &[
+            ("ReturnValues", "returnValues", &["NONE", "ALL_OLD"]),
+            (
+                "ReturnConsumedCapacity",
+                "returnConsumedCapacity",
+                &["INDEXES", "TOTAL", "NONE"],
+            ),
+        ],
+    )?;
     let input: DeleteItemInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     extenddb_core::validation::validate_table_name(&input.table_name, &ctx.limits)?;
@@ -61,8 +68,12 @@ pub async fn handle_delete_item<S: TableEngine + DataEngine>(
     if input.expected.is_none() || input.expected.as_ref().is_some_and(|m| m.is_empty()) {
         let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
         extenddb_core::expression::validate_unused_attributes(
-            &maps.names, &maps.values, &exprs, &[],
-            &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+            &maps.names,
+            &maps.values,
+            &exprs,
+            &[],
+            &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
         )?;
     }
 

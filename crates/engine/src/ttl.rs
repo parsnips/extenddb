@@ -27,7 +27,8 @@ pub async fn handle_describe_time_to_live<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: DescribeTimeToLiveInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: DescribeTimeToLiveInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     validate_table_name(&input.table_name, &ctx.limits)?;
 
@@ -59,7 +60,8 @@ pub async fn handle_update_time_to_live<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: UpdateTimeToLiveInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: UpdateTimeToLiveInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     validate_table_name(&input.table_name, &ctx.limits)?;
     validate_ttl_attribute_name(&input.time_to_live_specification.attribute_name)?;
@@ -157,9 +159,9 @@ fn validate_ttl_attribute_name(name: &str) -> Result<(), DynamoDbError> {
 
 fn storage_to_dynamo(e: StorageError) -> DynamoDbError {
     match e {
-        StorageError::TableNotFound(name) => DynamoDbError::ResourceNotFoundException(format!(
-            "Requested resource not found"
-        )),
+        StorageError::TableNotFound(_name) => {
+            DynamoDbError::ResourceNotFoundException(format!("Requested resource not found"))
+        }
         StorageError::TableNotActive(name) => {
             DynamoDbError::ResourceInUseException(format!("Table {name} is not in ACTIVE state"))
         }

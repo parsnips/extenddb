@@ -10,7 +10,7 @@ use serde_json::Value;
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::expression::PathElement;
 use extenddb_core::expression::{
-    parse_key_condition, parse_projection, tokenize_for, ExpressionMaps,
+    ExpressionMaps, parse_key_condition, parse_projection, tokenize_for,
 };
 use extenddb_core::types::{
     IndexType, KeyType, QueryInput, QueryOutput, Select, TableKeyInfo, item_size_bytes,
@@ -123,7 +123,10 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
     }
 
     let has_pe = input.projection_expression.is_some();
-    let has_atg = input.attributes_to_get.as_ref().is_some_and(|a| !a.is_empty());
+    let has_atg = input
+        .attributes_to_get
+        .as_ref()
+        .is_some_and(|a| !a.is_empty());
 
     if has_pe && has_atg {
         return Err(DynamoDbError::ValidationException(
@@ -143,7 +146,11 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
     let (mut key_condition, legacy_kc_maps) = if let Some(kce_str) =
         input.key_condition_expression.as_deref()
     {
-        let tokens = tokenize_for(kce_str, ctx.limits.max_expression_tokens, "KeyConditionExpression")?;
+        let tokens = tokenize_for(
+            kce_str,
+            ctx.limits.max_expression_tokens,
+            "KeyConditionExpression",
+        )?;
         (parse_key_condition(&tokens)?, None)
     } else if let Some(ref kc) = input.key_conditions {
         let key_schema_pairs: Vec<(String, bool)> = query_key_info
@@ -204,7 +211,8 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
                         return false;
                     }
                     !key_condition.extra_pk_conditions.iter().any(|(path, _)| {
-                        resolve_path_attr_name(path, &effective_maps.names).as_deref() == Some(*attr)
+                        resolve_path_attr_name(path, &effective_maps.names).as_deref()
+                            == Some(*attr)
                     })
                 })
                 .unwrap_or(&hash_attrs[0]);
@@ -221,10 +229,16 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
             let (expr, fmaps) = desugar_filter(qf, cond_op)?;
             (Some(expr), Some(fmaps))
         } else {
-            (parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?, None)
+            (
+                parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?,
+                None,
+            )
         }
     } else {
-        (parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?, None)
+        (
+            parse_optional_filter(input.filter_expression.as_deref(), &ctx.limits)?,
+            None,
+        )
     };
 
     // Validate #name references in filter are defined in ExpressionAttributeNames
@@ -253,7 +267,11 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
     };
 
     let projection = if let Some(ref proj_str) = effective_projection_str {
-        let proj_tokens = tokenize_for(proj_str, ctx.limits.max_expression_tokens, "ProjectionExpression")?;
+        let proj_tokens = tokenize_for(
+            proj_str,
+            ctx.limits.max_expression_tokens,
+            "ProjectionExpression",
+        )?;
         Some(parse_projection(&proj_tokens)?)
     } else {
         None
@@ -262,7 +280,8 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
     // Validate unused expression attributes
     {
         let exprs: Vec<&extenddb_core::expression::Expr> = filter.iter().collect();
-        let (mut kc_names, kc_values) = extenddb_core::expression::collect_key_condition_refs(&key_condition);
+        let (mut kc_names, kc_values) =
+            extenddb_core::expression::collect_key_condition_refs(&key_condition);
         // Collect #name refs from projection paths
         if let Some(ref proj) = projection {
             for path in proj {
@@ -276,8 +295,12 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
             }
         }
         extenddb_core::expression::validate_unused_attributes(
-            &maps.names, &maps.values, &exprs, &[],
-            &kc_names, &kc_values,
+            &maps.names,
+            &maps.values,
+            &exprs,
+            &[],
+            &kc_names,
+            &kc_values,
         )?;
     }
 

@@ -36,7 +36,8 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let input: TransactGetItemsInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: TransactGetItemsInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.transact_items.is_empty() {
         return Err(DynamoDbError::ValidationException(
@@ -45,18 +46,22 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
     }
 
     if input.transact_items.len() > MAX_TRANSACT_GET_ITEMS {
-        return Err(DynamoDbError::ValidationException(
-            format!(
-                "1 validation error detected: Value '[{}]' at 'transactItems' failed to satisfy constraint: Member must have length less than or equal to 100",
-                input.transact_items.iter().map(|_| "TransactGetItem").collect::<Vec<_>>().join(", ")
-            ),
-        ));
+        return Err(DynamoDbError::ValidationException(format!(
+            "1 validation error detected: Value '[{}]' at 'transactItems' failed to satisfy constraint: Member must have length less than or equal to 100",
+            input
+                .transact_items
+                .iter()
+                .map(|_| "TransactGetItem")
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
     }
 
     // Resolve table key info for each item
     let mut seen_keys: HashSet<Vec<u8>> = HashSet::with_capacity(input.transact_items.len());
     for tgi in &input.transact_items {
-        let dedup_key = serde_json::to_vec(&(&tgi.get.table_name, &tgi.get.key)).unwrap_or_default();
+        let dedup_key =
+            serde_json::to_vec(&(&tgi.get.table_name, &tgi.get.key)).unwrap_or_default();
         if !seen_keys.insert(dedup_key) {
             return Err(DynamoDbError::ValidationException(
                 "Transaction request cannot include multiple operations on one item".to_owned(),
@@ -120,11 +125,13 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
         .into_iter()
         .zip(input.transact_items.iter())
         .map(|(opt, tgi)| {
-            let maps =
-                build_expression_maps(tgi.get.expression_attribute_names.as_ref(), None);
+            let maps = build_expression_maps(tgi.get.expression_attribute_names.as_ref(), None);
             if let Some(ref proj_str) = tgi.get.projection_expression {
-                let proj_tokens =
-                    tokenize_for(proj_str, ctx.limits.max_expression_tokens, "ProjectionExpression")?;
+                let proj_tokens = tokenize_for(
+                    proj_str,
+                    ctx.limits.max_expression_tokens,
+                    "ProjectionExpression",
+                )?;
                 let projection = parse_projection(&proj_tokens)?;
                 let mut extra_names = std::collections::HashSet::new();
                 for path in &projection {
@@ -137,15 +144,25 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
                     }
                 }
                 extenddb_core::expression::validate_unused_attributes(
-                    &maps.names, &maps.values, &[], &[],
-                    &extra_names, &std::collections::HashSet::new(),
+                    &maps.names,
+                    &maps.values,
+                    &[],
+                    &[],
+                    &extra_names,
+                    &std::collections::HashSet::new(),
                 )?;
-                let item = opt.map(|item| apply_projection(&item, &projection, &maps)).transpose()?;
+                let item = opt
+                    .map(|item| apply_projection(&item, &projection, &maps))
+                    .transpose()?;
                 Ok(ItemResponse { item })
             } else {
                 extenddb_core::expression::validate_unused_attributes(
-                    &maps.names, &maps.values, &[], &[],
-                    &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+                    &maps.names,
+                    &maps.values,
+                    &[],
+                    &[],
+                    &std::collections::HashSet::new(),
+                    &std::collections::HashSet::new(),
                 )?;
                 Ok(ItemResponse { item: opt })
             }

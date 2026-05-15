@@ -97,8 +97,7 @@ impl PostgresEngine {
                 .await
                 .map_err(|e| StorageError::Internal(e.to_string()))?;
             for idx_id in &index_ids {
-                Self::drop_index_data_table(&mut data_tx, idx_id)
-                    .await?;
+                Self::drop_index_data_table(&mut data_tx, idx_id).await?;
             }
             Self::drop_data_table(&mut data_tx, &row.table_id).await?;
             data_tx

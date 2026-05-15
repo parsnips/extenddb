@@ -46,9 +46,7 @@ pub(crate) struct IndexRow {
 
 impl PostgresEngine {
     /// SQL table name for a GSI data table (static version for use outside `data` module).
-    pub(crate) fn index_table_name_static(
-        index_id: &str,
-    ) -> String {
+    pub(crate) fn index_table_name_static(index_id: &str) -> String {
         data::index_table_name(index_id)
     }
 

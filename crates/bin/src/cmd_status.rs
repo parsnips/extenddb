@@ -42,11 +42,9 @@ pub fn run(args: &StatusArgs) {
         // D-3: Include PID from the PID file when available.
         // Validate the PID is alive to avoid reporting stale PIDs after unclean shutdown.
         // Try config-based run_dir first, fall back to default.
-        let pid_file = config::load(&args.config)
-            .map(|c| {
+        let pid_file = config::load(&args.config).map_or_else(|_| crate::serve_helpers::pid_file_path_default(port), |c| {
                 crate::serve_helpers::pid_file_path(&config::expand_tilde(&c.server.run_dir), port)
-            })
-            .unwrap_or_else(|_| crate::serve_helpers::pid_file_path_default(port));
+            });
         let pid_label = std::fs::read_to_string(&pid_file)
             .ok()
             .and_then(|contents| {

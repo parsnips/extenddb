@@ -115,7 +115,7 @@ fn print_version() {
         for backend in backends {
             let version = extenddb_storage::operations::catalog_version(backend)
                 .unwrap_or_else(|_| "unknown".to_string());
-            println!("catalog {} ({})", version, backend);
+            println!("catalog {version} ({backend})");
         }
     }
 

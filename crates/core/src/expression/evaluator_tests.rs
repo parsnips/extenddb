@@ -274,7 +274,15 @@ fn ne_on_missing_attribute_is_true() {
     let item = BTreeMap::new();
     let mut values = HashMap::new();
     values.insert("v".into(), AttributeValue::S("anything".into()));
-    assert!(eval("#a <> :v", &item, HashMap::from([("a".into(), "missing".into())]), values).unwrap());
+    assert!(
+        eval(
+            "#a <> :v",
+            &item,
+            HashMap::from([("a".into(), "missing".into())]),
+            values
+        )
+        .unwrap()
+    );
 }
 
 #[test]
@@ -282,7 +290,15 @@ fn eq_on_missing_attribute_is_false() {
     let item = BTreeMap::new();
     let mut values = HashMap::new();
     values.insert("v".into(), AttributeValue::S("anything".into()));
-    assert!(!eval("#a = :v", &item, HashMap::from([("a".into(), "missing".into())]), values).unwrap());
+    assert!(
+        !eval(
+            "#a = :v",
+            &item,
+            HashMap::from([("a".into(), "missing".into())]),
+            values
+        )
+        .unwrap()
+    );
 }
 
 #[test]
@@ -290,7 +306,15 @@ fn lt_on_missing_attribute_is_false() {
     let item = BTreeMap::new();
     let mut values = HashMap::new();
     values.insert("v".into(), AttributeValue::S("anything".into()));
-    assert!(!eval("#a < :v", &item, HashMap::from([("a".into(), "missing".into())]), values).unwrap());
+    assert!(
+        !eval(
+            "#a < :v",
+            &item,
+            HashMap::from([("a".into(), "missing".into())]),
+            values
+        )
+        .unwrap()
+    );
 }
 
 #[test]

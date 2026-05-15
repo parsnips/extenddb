@@ -15,7 +15,8 @@ pub async fn handle_describe_table<S: TableEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: DescribeTableInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: DescribeTableInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     validate_table_name(&input.table_name, &ctx.limits)?;
 

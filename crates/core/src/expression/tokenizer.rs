@@ -214,63 +214,115 @@ pub fn tokenize_for(
     while i < bytes.len() {
         match bytes[i] {
             b' ' | b'\t' | b'\n' | b'\r' => i += 1,
-            b'(' => { push_token(&mut tokens, Token::LParen, max_tokens)?; i += 1; }
-            b')' => { push_token(&mut tokens, Token::RParen, max_tokens)?; i += 1; }
-            b'[' => { push_token(&mut tokens, Token::LBracket, max_tokens)?; i += 1; }
-            b']' => { push_token(&mut tokens, Token::RBracket, max_tokens)?; i += 1; }
-            b',' => { push_token(&mut tokens, Token::Comma, max_tokens)?; i += 1; }
-            b'.' => { push_token(&mut tokens, Token::Dot, max_tokens)?; i += 1; }
-            b'+' => { push_token(&mut tokens, Token::Plus, max_tokens)?; i += 1; }
-            b'-' => { push_token(&mut tokens, Token::Minus, max_tokens)?; i += 1; }
-            b'=' => { push_token(&mut tokens, Token::Eq, max_tokens)?; i += 1; }
+            b'(' => {
+                push_token(&mut tokens, Token::LParen, max_tokens)?;
+                i += 1;
+            }
+            b')' => {
+                push_token(&mut tokens, Token::RParen, max_tokens)?;
+                i += 1;
+            }
+            b'[' => {
+                push_token(&mut tokens, Token::LBracket, max_tokens)?;
+                i += 1;
+            }
+            b']' => {
+                push_token(&mut tokens, Token::RBracket, max_tokens)?;
+                i += 1;
+            }
+            b',' => {
+                push_token(&mut tokens, Token::Comma, max_tokens)?;
+                i += 1;
+            }
+            b'.' => {
+                push_token(&mut tokens, Token::Dot, max_tokens)?;
+                i += 1;
+            }
+            b'+' => {
+                push_token(&mut tokens, Token::Plus, max_tokens)?;
+                i += 1;
+            }
+            b'-' => {
+                push_token(&mut tokens, Token::Minus, max_tokens)?;
+                i += 1;
+            }
+            b'=' => {
+                push_token(&mut tokens, Token::Eq, max_tokens)?;
+                i += 1;
+            }
             b'<' => {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'>' {
-                    push_token(&mut tokens, Token::Ne, max_tokens)?; i += 2;
+                    push_token(&mut tokens, Token::Ne, max_tokens)?;
+                    i += 2;
                 } else if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
-                    push_token(&mut tokens, Token::Le, max_tokens)?; i += 2;
+                    push_token(&mut tokens, Token::Le, max_tokens)?;
+                    i += 2;
                 } else {
-                    push_token(&mut tokens, Token::Lt, max_tokens)?; i += 1;
+                    push_token(&mut tokens, Token::Lt, max_tokens)?;
+                    i += 1;
                 }
             }
             b'>' => {
                 if i + 1 < bytes.len() && bytes[i + 1] == b'=' {
-                    push_token(&mut tokens, Token::Ge, max_tokens)?; i += 2;
+                    push_token(&mut tokens, Token::Ge, max_tokens)?;
+                    i += 2;
                 } else {
-                    push_token(&mut tokens, Token::Gt, max_tokens)?; i += 1;
+                    push_token(&mut tokens, Token::Gt, max_tokens)?;
+                    i += 1;
                 }
             }
             b'#' => {
                 i += 1;
                 let start = i;
-                while i < bytes.len() && is_ident_char(bytes[i]) { i += 1; }
+                while i < bytes.len() && is_ident_char(bytes[i]) {
+                    i += 1;
+                }
                 if i == start {
                     return Err(DynamoDbError::ValidationException(format!(
                         "Invalid {expr_type}: Syntax error; token: \"#\", near: \"#\""
                     )));
                 }
-                push_token(&mut tokens, Token::NameRef(input[start..i].to_owned()), max_tokens)?;
+                push_token(
+                    &mut tokens,
+                    Token::NameRef(input[start..i].to_owned()),
+                    max_tokens,
+                )?;
             }
             b':' => {
                 i += 1;
                 let start = i;
-                while i < bytes.len() && is_ident_char(bytes[i]) { i += 1; }
+                while i < bytes.len() && is_ident_char(bytes[i]) {
+                    i += 1;
+                }
                 if i == start {
                     return Err(DynamoDbError::ValidationException(format!(
                         "Invalid {expr_type}: Syntax error; token: \":\", near: \":\""
                     )));
                 }
-                push_token(&mut tokens, Token::Placeholder(input[start..i].to_owned()), max_tokens)?;
+                push_token(
+                    &mut tokens,
+                    Token::Placeholder(input[start..i].to_owned()),
+                    max_tokens,
+                )?;
             }
             c if is_ident_start(c) => {
                 let start = i;
-                while i < bytes.len() && is_ident_char(bytes[i]) { i += 1; }
+                while i < bytes.len() && is_ident_char(bytes[i]) {
+                    i += 1;
+                }
                 let word = &input[start..i];
                 push_token(&mut tokens, keyword_or_ident(word), max_tokens)?;
             }
             c if c.is_ascii_digit() => {
                 let start = i;
-                while i < bytes.len() && bytes[i].is_ascii_digit() { i += 1; }
-                push_token(&mut tokens, Token::Ident(input[start..i].to_owned()), max_tokens)?;
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                push_token(
+                    &mut tokens,
+                    Token::Ident(input[start..i].to_owned()),
+                    max_tokens,
+                )?;
             }
             _ => {
                 let token_str = &input[i..i + 1];

@@ -48,7 +48,7 @@ async fn validate_resource_arn<S: TableEngine>(
     if let Some(arn_account) = extract_account_from_arn(arn) {
         if arn_account != ctx.account_id.as_ref() {
             return Err(DynamoDbError::AccessDeniedException(
-                "Access is denied".to_owned()
+                "Access is denied".to_owned(),
             ));
         }
     }
@@ -110,7 +110,8 @@ pub async fn handle_untag_resource<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: UntagResourceInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: UntagResourceInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.resource_arn.is_empty() {
         return Err(DynamoDbError::ValidationException(
@@ -140,7 +141,8 @@ pub async fn handle_list_tags_of_resource<S: TableEngine + MetadataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<Value, DynamoDbError> {
-    let input: ListTagsOfResourceInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: ListTagsOfResourceInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     if input.resource_arn.is_empty() {
         return Err(DynamoDbError::ValidationException(

@@ -8,7 +8,7 @@
 //!
 //! This command uses raw `sqlx` queries intentionally. It is a diagnostic
 //! tool that runs outside the server process and needs direct database
-//! access to cross-reference catalog metadata against physical PostgreSQL
+//! access to cross-reference catalog metadata against physical `PostgreSQL`
 //! tables. Routing through the storage abstraction would defeat the purpose
 //! of an independent integrity check.
 

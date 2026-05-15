@@ -22,9 +22,11 @@ pub fn validation_errors(errors: &[(&str, &str, &str)]) -> String {
             format!("Value '{value}' at '{field}' failed to satisfy constraint: {constraint}")
         })
         .collect();
-    format!("{count} validation error{} detected: {}",
+    format!(
+        "{count} validation error{} detected: {}",
         if count == 1 { "" } else { "s" },
-        details.join("; "))
+        details.join("; ")
+    )
 }
 
 /// Keys for error message templates. Compile-time checked — no stringly-typed lookups.

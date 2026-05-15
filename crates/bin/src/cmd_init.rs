@@ -264,8 +264,7 @@ pub async fn run(args: InitArgs) -> anyhow::Result<u8> {
     generate_config(config_path, &catalog_url, &bind_addr, docs_dir.as_deref())?;
 
     println!(
-        "\n=== extenddb init complete ===\nStart the server with: extenddb serve --config {}",
-        config_path
+        "\n=== extenddb init complete ===\nStart the server with: extenddb serve --config {config_path}"
     );
 
     Ok(0)

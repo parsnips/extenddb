@@ -37,7 +37,8 @@ pub async fn handle_batch_get_item<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let input: BatchGetItemInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: BatchGetItemInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     // Validate: RequestItems must not be empty
     if input.request_items.is_empty() {
@@ -109,7 +110,8 @@ pub async fn handle_batch_get_item<S: TableEngine + DataEngine>(
         };
 
         let projection = if let Some(ref proj_str) = effective_proj_str {
-            let proj_tokens = crate::expression_helpers::tokenize_expression(proj_str, &ctx.limits)?;
+            let proj_tokens =
+                crate::expression_helpers::tokenize_expression(proj_str, &ctx.limits)?;
             Some(parse_projection(&proj_tokens)?)
         } else {
             None

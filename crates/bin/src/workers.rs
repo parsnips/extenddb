@@ -131,7 +131,7 @@ pub(crate) async fn poll_throttling_enabled<S: SettingsStore>(
 
 /// F-3: Event-driven control plane transition poller.
 ///
-/// Blocks on a `Notify` until a CreateTable or DeleteTable wakes it.
+/// Blocks on a `Notify` until a `CreateTable` or `DeleteTable` wakes it.
 /// Once woken, polls every second until no work remains, then returns
 /// to idle. A 60-second timeout provides a defensive sweep even if a
 /// notification is missed.

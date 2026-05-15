@@ -223,7 +223,11 @@ pub fn validate_unused_attributes(
 
     for key in names.keys() {
         if !used_names.contains(key.strip_prefix('#').unwrap_or(key)) {
-            let display_key = if key.starts_with('#') { key.clone() } else { format!("#{key}") };
+            let display_key = if key.starts_with('#') {
+                key.clone()
+            } else {
+                format!("#{key}")
+            };
             return Err(DynamoDbError::ValidationException(format!(
                 "Value provided in ExpressionAttributeNames unused in expressions: keys: {{{display_key}}}"
             )));
@@ -231,7 +235,11 @@ pub fn validate_unused_attributes(
     }
     for key in values.keys() {
         if !used_values.contains(key.strip_prefix(':').unwrap_or(key)) {
-            let display_key = if key.starts_with(':') { key.clone() } else { format!(":{key}") };
+            let display_key = if key.starts_with(':') {
+                key.clone()
+            } else {
+                format!(":{key}")
+            };
             return Err(DynamoDbError::ValidationException(format!(
                 "Value provided in ExpressionAttributeValues unused in expressions: keys: {{{display_key}}}"
             )));
@@ -248,7 +256,9 @@ fn collect_expr_refs(
     use super::ast::Expr;
     match expr {
         Expr::Path(elements) => collect_path_refs(elements, names),
-        Expr::Placeholder(name) => { values.insert(name.clone()); }
+        Expr::Placeholder(name) => {
+            values.insert(name.clone());
+        }
         Expr::Compare { left, right, .. } | Expr::Arithmetic { left, right, .. } => {
             collect_expr_refs(left, names, values);
             collect_expr_refs(right, names, values);
@@ -259,7 +269,9 @@ fn collect_expr_refs(
         }
         Expr::Not(inner) => collect_expr_refs(inner, names, values),
         Expr::Function { args, .. } => {
-            for arg in args { collect_expr_refs(arg, names, values); }
+            for arg in args {
+                collect_expr_refs(arg, names, values);
+            }
         }
         Expr::Between { operand, low, high } => {
             collect_expr_refs(operand, names, values);
@@ -268,7 +280,9 @@ fn collect_expr_refs(
         }
         Expr::In { operand, list } => {
             collect_expr_refs(operand, names, values);
-            for item in list { collect_expr_refs(item, names, values); }
+            for item in list {
+                collect_expr_refs(item, names, values);
+            }
         }
     }
 }
@@ -306,7 +320,10 @@ fn collect_path_refs(elements: &[PathElement], names: &mut std::collections::Has
 /// `validate_unused_attributes`.
 pub fn collect_key_condition_refs(
     kc: &super::key_condition::KeyCondition,
-) -> (std::collections::HashSet<String>, std::collections::HashSet<String>) {
+) -> (
+    std::collections::HashSet<String>,
+    std::collections::HashSet<String>,
+) {
     let mut names = std::collections::HashSet::new();
     let mut values = std::collections::HashSet::new();
 

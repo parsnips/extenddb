@@ -44,7 +44,8 @@ pub async fn handle_transact_write_items<S: TableEngine + DataEngine>(
     body: Value,
     ctx: &OperationContext<S>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let input: TransactWriteItemsInput = serde_json::from_value(body.clone()).map_err(crate::deserialize_error)?;
+    let input: TransactWriteItemsInput =
+        serde_json::from_value(body.clone()).map_err(crate::deserialize_error)?;
 
     // Compute fingerprint keyed by the client request token for collision
     // resistance. Must happen after parsing so the token is available.
@@ -61,7 +62,12 @@ pub async fn handle_transact_write_items<S: TableEngine + DataEngine>(
     }
 
     if input.transact_items.len() > MAX_TRANSACT_WRITE_ITEMS {
-        let items_repr = input.transact_items.iter().map(|_| "TransactWriteItem").collect::<Vec<_>>().join(", ");
+        let items_repr = input
+            .transact_items
+            .iter()
+            .map(|_| "TransactWriteItem")
+            .collect::<Vec<_>>()
+            .join(", ");
         return Err(DynamoDbError::ValidationException(format!(
             "1 validation error detected: Value '[{items_repr}]' at 'transactItems' failed to satisfy constraint: Member must have length less than or equal to 100"
         )));
@@ -215,8 +221,12 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
         {
             let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
             extenddb_core::expression::validate_unused_attributes(
-                &maps.names, &maps.values, &exprs, &[],
-                &HashSet::new(), &HashSet::new(),
+                &maps.names,
+                &maps.values,
+                &exprs,
+                &[],
+                &HashSet::new(),
+                &HashSet::new(),
             )?;
         }
         let stream =
@@ -249,8 +259,12 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
         {
             let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
             extenddb_core::expression::validate_unused_attributes(
-                &maps.names, &maps.values, &exprs, &[],
-                &HashSet::new(), &HashSet::new(),
+                &maps.names,
+                &maps.values,
+                &exprs,
+                &[],
+                &HashSet::new(),
+                &HashSet::new(),
             )?;
         }
         let stream =
@@ -279,19 +293,20 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             upd.expression_attribute_names.as_ref(),
             upd.expression_attribute_values.as_ref(),
         );
-        let update_tokens = crate::expression_helpers::tokenize_expression(
-            &upd.update_expression,
-            &ctx.limits,
-        )?;
+        let update_tokens =
+            crate::expression_helpers::tokenize_expression(&upd.update_expression, &ctx.limits)?;
         let actions = parse_update(&update_tokens)?;
         validate_no_key_updates(&actions, &key_info, &maps)?;
         let condition = parse_optional_condition(upd.condition_expression.as_deref(), &ctx.limits)?;
         {
             let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
             extenddb_core::expression::validate_unused_attributes(
-                &maps.names, &maps.values, &exprs,
+                &maps.names,
+                &maps.values,
+                &exprs,
                 &actions.iter().collect::<Vec<_>>(),
-                &HashSet::new(), &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::new(),
             )?;
         }
         let stream =
@@ -321,10 +336,8 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             cc.expression_attribute_names.as_ref(),
             cc.expression_attribute_values.as_ref(),
         );
-        let tokens = crate::expression_helpers::tokenize_expression(
-            &cc.condition_expression,
-            &ctx.limits,
-        )?;
+        let tokens =
+            crate::expression_helpers::tokenize_expression(&cc.condition_expression, &ctx.limits)?;
         let condition = extenddb_core::expression::parse_condition_with_depth_limit(
             &tokens,
             ctx.limits.max_expression_depth,
@@ -332,8 +345,12 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
         {
             let exprs: Vec<&extenddb_core::expression::Expr> = vec![&condition];
             extenddb_core::expression::validate_unused_attributes(
-                &maps.names, &maps.values, &exprs, &[],
-                &HashSet::new(), &HashSet::new(),
+                &maps.names,
+                &maps.values,
+                &exprs,
+                &[],
+                &HashSet::new(),
+                &HashSet::new(),
             )?;
         }
         return Ok(PreparedOp::ConditionCheck {

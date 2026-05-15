@@ -70,9 +70,9 @@ impl PreparedOp {
     pub(crate) fn item_size(&self) -> usize {
         match self {
             Self::Put { item, .. } => extenddb_core::types::item_size_bytes(item),
-            Self::Delete { key, .. } | Self::Update { key, .. } | Self::ConditionCheck { key, .. } => {
-                extenddb_core::types::item_size_bytes(key)
-            }
+            Self::Delete { key, .. }
+            | Self::Update { key, .. }
+            | Self::ConditionCheck { key, .. } => extenddb_core::types::item_size_bytes(key),
         }
     }
 
@@ -198,8 +198,7 @@ pub(crate) fn parse_optional_condition(
 ) -> Result<Option<extenddb_core::expression::Expr>, DynamoDbError> {
     match expr {
         Some(s) if !s.is_empty() => {
-            let tokens =
-                crate::expression_helpers::tokenize_expression(s, limits)?;
+            let tokens = crate::expression_helpers::tokenize_expression(s, limits)?;
             let ast = extenddb_core::expression::parse_condition_with_depth_limit(
                 &tokens,
                 limits.max_expression_depth,

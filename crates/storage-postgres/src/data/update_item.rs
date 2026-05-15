@@ -158,9 +158,7 @@ impl PostgresEngine {
             }
         } else {
             if old_json.is_some() {
-                let update_sql = format!(
-                    "UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1"
-                );
+                let update_sql = format!("UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1");
                 sqlx::query(&update_sql)
                     .bind(pk_text.as_ref())
                     .bind(&item_json)

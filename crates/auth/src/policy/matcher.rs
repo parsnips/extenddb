@@ -188,7 +188,10 @@ mod tests {
 
     #[test]
     fn ignore_case_wildcard() {
-        assert!(wildcard_match_ignore_case("dynamodb:get*", "dynamodb:GetItem"));
+        assert!(wildcard_match_ignore_case(
+            "dynamodb:get*",
+            "dynamodb:GetItem"
+        ));
         assert!(wildcard_match_ignore_case("DYNAMODB:*", "dynamodb:PutItem"));
     }
 

@@ -52,7 +52,7 @@ pub async fn run(args: SettingsArgs) -> anyhow::Result<()> {
         app_config.storage.connection_config(),
     )
     .await
-    .map_err(|e| anyhow::anyhow!("Failed to create settings store: {}", e))?;
+    .map_err(|e| anyhow::anyhow!("Failed to create settings store: {e}"))?;
 
     match args.action {
         SettingsAction::List => list(store.as_ref()).await,
@@ -65,7 +65,7 @@ async fn list(store: &dyn SettingsStore) -> anyhow::Result<()> {
     let rows = store
         .list_settings()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to list settings: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to list settings: {e:?}"))?;
 
     if rows.is_empty() {
         println!("No settings found.");
@@ -81,7 +81,7 @@ async fn get(store: &dyn SettingsStore, key: &str) -> anyhow::Result<()> {
     let value = store
         .get_setting(key)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to get setting: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to get setting: {e:?}"))?;
 
     if let Some(v) = value {
         println!("{v}");
@@ -117,7 +117,7 @@ async fn set(store: &dyn SettingsStore, key: &str, value: &str) -> anyhow::Resul
     store
         .set_setting(key, value)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to set setting: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to set setting: {e:?}"))?;
 
     tracing::warn!(
         target: "extenddb::audit::settings",

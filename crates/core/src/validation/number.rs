@@ -34,7 +34,9 @@ pub fn validate_and_normalize_number(s: &str) -> Result<String, DynamoDbError> {
         None => (mantissa_str, ""),
     };
 
-    if !int_part.chars().all(|c| c.is_ascii_digit()) || !frac_part.chars().all(|c| c.is_ascii_digit()) {
+    if !int_part.chars().all(|c| c.is_ascii_digit())
+        || !frac_part.chars().all(|c| c.is_ascii_digit())
+    {
         return Err(number_err());
     }
 
@@ -45,7 +47,9 @@ pub fn validate_and_normalize_number(s: &str) -> Result<String, DynamoDbError> {
     let point_offset = explicit_exp - frac_part.len() as i32;
 
     // Strip leading zeros to get significant digits
-    let sig_start = all_digits.find(|c: char| c != '0').unwrap_or(all_digits.len());
+    let sig_start = all_digits
+        .find(|c: char| c != '0')
+        .unwrap_or(all_digits.len());
     let significant = &all_digits[sig_start..];
 
     if significant.is_empty() {

@@ -120,12 +120,19 @@ pub async fn handle_update_table<S: TableEngine>(
                 // Validate that all key attributes are defined in AttributeDefinitions
                 let attr_defs = input.attribute_definitions.as_deref().unwrap_or(&[]);
                 for ks in &create.key_schema {
-                    if !attr_defs.iter().any(|ad| ad.attribute_name == ks.attribute_name) {
+                    if !attr_defs
+                        .iter()
+                        .any(|ad| ad.attribute_name == ks.attribute_name)
+                    {
                         return Err(DynamoDbError::ValidationException(format!(
                             "One or more parameter values were invalid: Some index key attributes are not defined in AttributeDefinitions. \
                              Keys: [{}], AttributeDefinitions: [{}]",
                             ks.attribute_name,
-                            attr_defs.iter().map(|ad| ad.attribute_name.as_str()).collect::<Vec<_>>().join(", ")
+                            attr_defs
+                                .iter()
+                                .map(|ad| ad.attribute_name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         )));
                     }
                 }
@@ -142,18 +149,25 @@ pub async fn handle_update_table<S: TableEngine>(
         if let Some(ref tp) = input.provisioned_throughput {
             let current = ctx
                 .storage
-                .describe_table(&ctx.account_id, DescribeTableInput { table_name: input.table_name.clone() })
+                .describe_table(
+                    &ctx.account_id,
+                    DescribeTableInput {
+                        table_name: input.table_name.clone(),
+                    },
+                )
                 .await
                 .map_err(|e| match e {
                     extenddb_storage::error::StorageError::TableNotFound(_) => {
                         DynamoDbError::ResourceNotFoundException(
-                            "Requested resource not found".to_owned()
+                            "Requested resource not found".to_owned(),
                         )
                     }
                     other => crate::sanitize_storage_error(other),
                 })?;
             let current_tp = &current.provisioned_throughput;
-            let is_provisioned = current.billing_mode_summary.as_ref()
+            let is_provisioned = current
+                .billing_mode_summary
+                .as_ref()
                 .map_or(true, |b| b.billing_mode == BillingMode::Provisioned);
             if current_tp.read_capacity_units == tp.read_capacity_units
                 && current_tp.write_capacity_units == tp.write_capacity_units
@@ -163,8 +177,10 @@ pub async fn handle_update_table<S: TableEngine>(
                     "The provisioned throughput for the table will not change. The requested value equals the current value. \
                      Current ReadCapacityUnits provisioned for the table: {}. Requested ReadCapacityUnits: {}. \
                      Current WriteCapacityUnits provisioned for the table: {}. Requested WriteCapacityUnits: {}.",
-                    current_tp.read_capacity_units, tp.read_capacity_units,
-                    current_tp.write_capacity_units, tp.write_capacity_units
+                    current_tp.read_capacity_units,
+                    tp.read_capacity_units,
+                    current_tp.write_capacity_units,
+                    tp.write_capacity_units
                 )));
             }
         }
@@ -175,10 +191,8 @@ pub async fn handle_update_table<S: TableEngine>(
         .update_table(&ctx.account_id, input)
         .await
         .map_err(|e| match e {
-            extenddb_storage::error::StorageError::TableNotFound(name) => {
-                DynamoDbError::ResourceNotFoundException(format!(
-                    "Requested resource not found"
-                ))
+            extenddb_storage::error::StorageError::TableNotFound(_name) => {
+                DynamoDbError::ResourceNotFoundException(format!("Requested resource not found"))
             }
             extenddb_storage::error::StorageError::TableNotActive(name) => {
                 DynamoDbError::ResourceInUseException(format!(

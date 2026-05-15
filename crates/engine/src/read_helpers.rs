@@ -65,15 +65,14 @@ pub fn apply_post_read(
         last_processed_key = Some(extract_key(item, lek_key_schema));
 
         if let Some(filter_expr) = filter {
-            let passed = evaluate_condition(filter_expr, item, maps)
-                .map_err(|e| {
-                    let msg = e.to_string();
-                    if msg.starts_with("Invalid ") {
-                        DynamoDbError::ValidationException(msg)
-                    } else {
-                        DynamoDbError::ValidationException(format!("Invalid FilterExpression: {msg}"))
-                    }
-                })?;
+            let passed = evaluate_condition(filter_expr, item, maps).map_err(|e| {
+                let msg = e.to_string();
+                if msg.starts_with("Invalid ") {
+                    DynamoDbError::ValidationException(msg)
+                } else {
+                    DynamoDbError::ValidationException(format!("Invalid FilterExpression: {msg}"))
+                }
+            })?;
             if !passed {
                 continue;
             }

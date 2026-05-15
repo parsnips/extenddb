@@ -36,18 +36,30 @@ pub async fn handle_put_item<S: TableEngine + DataEngine>(
         extenddb_core::validation::validate_table_name(table_name, &ctx.limits)?;
     } else if body.get("TableName").is_some_and(|v| v.is_string()) {
         // empty string — caught by validate_table_name above
-    } else if body.get("TableName").is_none() || body.get("TableName").is_some_and(|v| v.is_null()) {
+    } else if body.get("TableName").is_none() || body.get("TableName").is_some_and(|v| v.is_null())
+    {
         return Err(DynamoDbError::ValidationException(
             "1 validation error detected: Value null at 'tableName' failed to satisfy constraint: Member must not be null".to_owned()
         ));
     }
 
     // Pre-validate enum fields (report all invalid enums together)
-    crate::validate_enum_fields(&body, &[
-        ("ReturnValues", "returnValues", &["NONE", "ALL_OLD"]),
-        ("ReturnConsumedCapacity", "returnConsumedCapacity", &["INDEXES", "TOTAL", "NONE"]),
-        ("ReturnItemCollectionMetrics", "returnItemCollectionMetrics", &["SIZE", "NONE"]),
-    ])?;
+    crate::validate_enum_fields(
+        &body,
+        &[
+            ("ReturnValues", "returnValues", &["NONE", "ALL_OLD"]),
+            (
+                "ReturnConsumedCapacity",
+                "returnConsumedCapacity",
+                &["INDEXES", "TOTAL", "NONE"],
+            ),
+            (
+                "ReturnItemCollectionMetrics",
+                "returnItemCollectionMetrics",
+                &["SIZE", "NONE"],
+            ),
+        ],
+    )?;
 
     let input: PutItemInput = serde_json::from_value(body).map_err(|e| {
         let msg = e.to_string();
@@ -66,13 +78,26 @@ pub async fn handle_put_item<S: TableEngine + DataEngine>(
     })?;
 
     // Reject EAV/EAN without an expression
-    let has_expression = input.condition_expression.as_ref().is_some_and(|s| !s.is_empty());
-    if !has_expression && input.expression_attribute_values.as_ref().is_some_and(|m| !m.is_empty()) {
+    let has_expression = input
+        .condition_expression
+        .as_ref()
+        .is_some_and(|s| !s.is_empty());
+    if !has_expression
+        && input
+            .expression_attribute_values
+            .as_ref()
+            .is_some_and(|m| !m.is_empty())
+    {
         return Err(DynamoDbError::ValidationException(
             "ExpressionAttributeValues can only be specified when using expressions: ConditionExpression is null".to_owned(),
         ));
     }
-    if !has_expression && input.expression_attribute_names.as_ref().is_some_and(|m| !m.is_empty()) {
+    if !has_expression
+        && input
+            .expression_attribute_names
+            .as_ref()
+            .is_some_and(|m| !m.is_empty())
+    {
         return Err(DynamoDbError::ValidationException(
             "ExpressionAttributeNames can only be specified when using expressions: ConditionExpression is null".to_owned(),
         ));
@@ -104,8 +129,12 @@ pub async fn handle_put_item<S: TableEngine + DataEngine>(
     if input.expected.is_none() || input.expected.as_ref().is_some_and(|m| m.is_empty()) {
         let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
         extenddb_core::expression::validate_unused_attributes(
-            &maps.names, &maps.values, &exprs, &[],
-            &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+            &maps.names,
+            &maps.values,
+            &exprs,
+            &[],
+            &std::collections::HashSet::new(),
+            &std::collections::HashSet::new(),
         )?;
     }
 

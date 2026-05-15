@@ -13,7 +13,7 @@ pub struct AppConfig {
     pub server: ServerConfig,
     #[serde(default)]
     pub storage: StorageConfig,
-    /// Auth provider configuration. `provider = "builtin"` for SigV4 with
+    /// Auth provider configuration. `provider = "builtin"` for `SigV4` with
     /// local credential store. The server refuses to start with `provider = "none"`.
     #[serde(default)]
     pub auth: AuthConfig,
@@ -161,7 +161,7 @@ impl<'de> serde::Deserialize<'de> for StorageConfig {
             .get(&backend)
             .and_then(|v| v.as_table())
             .ok_or_else(|| {
-                D::Error::custom(format!("Missing [storage.{}] section in config", backend))
+                D::Error::custom(format!("Missing [storage.{backend}] section in config"))
             })?;
 
         // Use the registry to deserialize the backend config
@@ -187,7 +187,7 @@ impl Default for StorageConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
-    /// Auth provider: `"builtin"` (SigV4 + IAM policies). The `"none"` value
+    /// Auth provider: `"builtin"` (`SigV4` + IAM policies). The `"none"` value
     /// is no longer accepted at startup — the server refuses to start without
     /// authentication enabled.
     #[serde(default = "default_provider")]
@@ -293,7 +293,7 @@ pub fn load(config_path: &str) -> anyhow::Result<AppConfig> {
 /// Redact password from a connection string for safe logging (REQ-LOG-002).
 ///
 /// Uses the backend-specific operations engine to handle different connection
-/// string formats (PostgreSQL, Cassandra, etc.).
+/// string formats (`PostgreSQL`, Cassandra, etc.).
 pub fn redact_password(backend: &str, conn: &str) -> String {
     extenddb_storage::operations::redact_connection_string(backend, conn)
         .unwrap_or_else(|_| conn.to_owned())
@@ -315,7 +315,7 @@ pub fn whoami(default: &str) -> String {
 /// Returns an error describing the invalid character found.
 pub fn validate_identifier(backend: &str, name: &str, label: &str) -> anyhow::Result<()> {
     extenddb_storage::operations::validate_identifier(backend, name, label)
-        .map_err(|e| anyhow::anyhow!("{:?}", e))
+        .map_err(|e| anyhow::anyhow!("{e:?}"))
 }
 
 /// Keys whose values must be redacted in configuration displays.
@@ -371,15 +371,15 @@ pub fn build_config_entries(cfg: &AppConfig) -> Vec<(String, String)> {
                 .map_or("none".into(), |b| b.to_string()),
         ),
         (
-            format!("storage.{}.connection_string", backend),
+            format!("storage.{backend}.connection_string"),
             r("connection_string", cfg.storage.connection_config()),
         ),
         (
-            format!("storage.{}.pool_size", backend),
+            format!("storage.{backend}.pool_size"),
             cfg.storage.max_connections().to_string(),
         ),
         (
-            format!("storage.{}.catalog_pool_size", backend),
+            format!("storage.{backend}.catalog_pool_size"),
             cfg.storage.max_catalog_connections().to_string(),
         ),
         ("auth.provider".into(), cfg.auth.provider.clone()),

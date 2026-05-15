@@ -152,7 +152,8 @@ impl<'de> Visitor<'de> for AttributeValueVisitor {
                 let set: BTreeSet<String> = arr
                     .iter()
                     .map(|v| {
-                        let s = v.as_str()
+                        let s = v
+                            .as_str()
                             .ok_or_else(|| de::Error::custom("NS elements must be strings"))?;
                         Ok(crate::validation::number::validate_and_normalize_number(s)
                             .unwrap_or_else(|_| s.to_owned()))
@@ -366,7 +367,10 @@ mod tests {
     fn null_false_rejected() {
         let json = r#"{"NULL":false}"#;
         let err = serde_json::from_str::<AttributeValue>(json).unwrap_err();
-        assert!(err.to_string().contains("Null attribute value types must have the value of true"));
+        assert!(
+            err.to_string()
+                .contains("Null attribute value types must have the value of true")
+        );
     }
 
     #[test]

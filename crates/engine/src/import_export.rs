@@ -176,7 +176,8 @@ pub async fn handle_export_table<S: TableEngine + DataEngine>(
         ));
     }
 
-    let input: extenddb_core::types::ExportTableToPointInTimeInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
+    let input: extenddb_core::types::ExportTableToPointInTimeInput =
+        serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
     let start_time = epoch_seconds();
     let export_format = input.export_format.unwrap_or(ExportFormat::DynamoDbJson);

@@ -15,11 +15,11 @@ pub struct MigrateArgs {
     #[arg(short, long, default_value = "extenddb.toml")]
     config: String,
 
-    /// PostgreSQL admin user (for catalog migrations)
+    /// `PostgreSQL` admin user (for catalog migrations)
     #[arg(long)]
     pg_user: Option<String>,
 
-    /// PostgreSQL admin password
+    /// `PostgreSQL` admin password
     #[arg(long)]
     pg_pass: Option<String>,
 
