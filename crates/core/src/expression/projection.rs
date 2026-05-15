@@ -75,6 +75,9 @@ pub fn apply_projection(
 
 /// Insert a value at a nested path in the result item, creating intermediate
 /// maps/lists as needed.
+///
+/// DynamoDB projection semantics for list indices: projecting `mylist[N]`
+/// returns `{"mylist": [value]}` — a single-element list wrapping the value.
 fn insert_nested(
     result: &mut Item,
     path: &[PathElement],
@@ -90,6 +93,14 @@ fn insert_nested(
     if path.len() == 1 {
         result.insert(top_name, value.clone());
         return Ok(());
+    }
+
+    if path.len() == 2 {
+        if let PathElement::Index(_) = &path[1] {
+            // mylist[N] → {"mylist": [value]}
+            result.insert(top_name, AttributeValue::L(vec![value.clone()]));
+            return Ok(());
+        }
     }
 
     // For nested paths, we need to build the intermediate structure
@@ -111,7 +122,9 @@ fn insert_nested(
                 }
             }
             PathElement::Index(_) => {
-                // Nested list index projection — complex case, skip for now
+                // Intermediate list index: wrap remaining path in a single-element list
+                let remaining_value = value.clone();
+                *current = AttributeValue::L(vec![remaining_value]);
                 return Ok(());
             }
         }
@@ -126,7 +139,8 @@ fn insert_nested(
             }
         }
         PathElement::Index(_) => {
-            // List index at leaf — skip for now
+            // List index at leaf of a deeper path — wrap in single-element list
+            *current = AttributeValue::L(vec![value.clone()]);
         }
     }
 
@@ -227,5 +241,42 @@ mod tests {
         let item = sample_item();
         let result = project("pk, name, age, address", &item, HashMap::new()).unwrap();
         assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn project_list_index() {
+        let mut item = BTreeMap::new();
+        item.insert("pk".into(), AttributeValue::S("k1".into()));
+        item.insert(
+            "mylist".into(),
+            AttributeValue::L(vec![
+                AttributeValue::S("zero".into()),
+                AttributeValue::S("one".into()),
+                AttributeValue::S("two".into()),
+            ]),
+        );
+
+        let result = project("mylist[0]", &item, HashMap::new()).unwrap();
+        assert_eq!(result.len(), 1);
+        match result.get("mylist") {
+            Some(AttributeValue::L(list)) => {
+                assert_eq!(list.len(), 1);
+                assert_eq!(list[0], AttributeValue::S("zero".into()));
+            }
+            other => panic!("Expected L, got {other:?}"),
+        }
+
+        let result = project("mylist[1]", &item, HashMap::new()).unwrap();
+        match result.get("mylist") {
+            Some(AttributeValue::L(list)) => {
+                assert_eq!(list.len(), 1);
+                assert_eq!(list[0], AttributeValue::S("one".into()));
+            }
+            other => panic!("Expected L, got {other:?}"),
+        }
+
+        // Out-of-bounds index returns empty
+        let result = project("mylist[5]", &item, HashMap::new()).unwrap();
+        assert!(result.is_empty());
     }
 }
