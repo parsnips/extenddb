@@ -66,6 +66,16 @@ impl PreparedOp {
         }
     }
 
+    /// Approximate item size for transaction size limit enforcement.
+    pub(crate) fn item_size(&self) -> usize {
+        match self {
+            Self::Put { item, .. } => extenddb_core::types::item_size_bytes(item),
+            Self::Delete { key, .. } | Self::Update { key, .. } | Self::ConditionCheck { key, .. } => {
+                extenddb_core::types::item_size_bytes(key)
+            }
+        }
+    }
+
     /// Canonical `"table_name:{json_key}"` string for duplicate-target detection.
     ///
     /// Uses JSON serialization of the extracted key (`BTreeMap` guarantees sorted
