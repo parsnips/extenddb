@@ -27,6 +27,8 @@ Initialized with:
 
 Runs as the current user (not as `postgres` system user).
 
+You may need to add the current user to the `postgres` group; if initdb fails, check your logs.
+
 ## Connection Details
 
 | Setting | Value |
@@ -37,7 +39,7 @@ Runs as the current user (not as `postgres` system user).
 | User | `extenddb` |
 | Password | `extenddb-local-dev` |
 | Connection string | `postgresql://extenddb:extenddb-local-dev@localhost:5432/extenddb` |
-| Admin user | `amrithie` (OS user, trust auth via local socket) |
+| Admin user | the OS user that ran `initdb` (trusted via local socket) |
 
 ## Starting / Stopping
 
@@ -59,9 +61,9 @@ tail -f ~/pgdata/server.log
 
 ## Authentication
 
-`pg_hba.conf` is configured so:
+`pgdata/pg_hba.conf` is configured so:
 - The `extenddb` user requires md5 password auth over TCP (`127.0.0.1`, `::1`)
-- The OS user (`amrithie`) has trust auth for admin tasks
+- The OS user that ran `initdb` has trust auth for admin tasks
 - Local socket connections use trust auth
 
 ## Config Mapping

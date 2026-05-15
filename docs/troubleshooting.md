@@ -33,8 +33,8 @@ pg_ctl -D ~/pgdata -l ~/pgdata/server.log start  # start it
 
 **Fix:**
 ```bash
-psql -U amrithie -d postgres -c "CREATE USER extenddb WITH PASSWORD 'extenddb-local-dev';"
-psql -U amrithie -d postgres -c "CREATE DATABASE extenddb OWNER extenddb;"
+psql -U $(id -nu) -d postgres -c "CREATE USER extenddb WITH PASSWORD 'extenddb-local-dev';"
+psql -U $(id -nu) -d postgres -c "CREATE DATABASE extenddb OWNER extenddb;"
 ```
 
 See `docs/local-postgres-setup.md` for full setup instructions.
