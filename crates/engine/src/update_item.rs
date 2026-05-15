@@ -110,6 +110,15 @@ pub async fn handle_update_item<S: TableEngine + DataEngine>(
     let update_tokens = tokenize_with_limit(update_expr, ctx.limits.max_expression_tokens)?;
     let actions = parse_update(&update_tokens)?;
 
+    if input.expected.is_none() || input.expected.as_ref().is_some_and(|m| m.is_empty()) {
+        let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
+        extenddb_core::expression::validate_unused_attributes(
+            &maps.names, &maps.values, &exprs,
+            &actions.iter().collect::<Vec<_>>(),
+            &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+        )?;
+    }
+
     // Validate that no update action targets a key attribute (REQ-DATA-003)
     validate_no_key_updates(&actions, &key_info, &maps)?;
 

@@ -137,6 +137,27 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
         None
     };
 
+    // Validate unused expression attributes
+    {
+        let exprs: Vec<&extenddb_core::expression::Expr> = filter.iter().collect();
+        let mut extra_names = std::collections::HashSet::new();
+        if let Some(ref proj) = projection {
+            for path in proj {
+                for el in path {
+                    if let extenddb_core::expression::PathElement::Attribute(name) = el {
+                        if let Some(ref_name) = name.strip_prefix('#') {
+                            extra_names.insert(ref_name.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+        extenddb_core::expression::validate_unused_attributes(
+            &maps.names, &maps.values, &exprs, &[],
+            &extra_names, &std::collections::HashSet::new(),
+        )?;
+    }
+
     // Validate Select vs ProjectionExpression and index requirements
     if let Some(Select::AllProjectedAttributes) = input.select {
         if index_info.is_none() {

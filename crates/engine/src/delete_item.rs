@@ -52,6 +52,14 @@ pub async fn handle_delete_item<S: TableEngine + DataEngine>(
         &ctx.limits,
     )?;
 
+    if input.expected.is_none() || input.expected.as_ref().is_some_and(|m| m.is_empty()) {
+        let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
+        extenddb_core::expression::validate_unused_attributes(
+            &maps.names, &maps.values, &exprs, &[],
+            &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+        )?;
+    }
+
     let return_old = input.return_values == ReturnValues::AllOld;
 
     let view_type = stream_capture::stream_view_type(&key_info);

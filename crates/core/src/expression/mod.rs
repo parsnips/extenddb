@@ -24,7 +24,7 @@ pub use evaluator::evaluate_condition;
 pub use key_condition::{KeyCondition, SortKeyCondition, parse_key_condition};
 pub use parser::{parse_condition, parse_condition_with_depth_limit};
 pub use projection::{apply_projection, parse_projection};
-pub use resolver::{ExpressionMaps, resolve_element_name, resolve_name_ref, resolve_path};
+pub use resolver::{ExpressionMaps, collect_key_condition_refs, resolve_element_name, resolve_name_ref, resolve_path, validate_unused_attributes};
 pub use tokenizer::{Token, tokenize, tokenize_with_limit};
 pub use update_evaluator::apply_update;
 pub use update_parser::parse_update;

@@ -185,3 +185,147 @@ pub fn resolve_element_name<'a>(
         )),
     }
 }
+
+/// Validate that all provided ExpressionAttributeNames/Values were used.
+///
+/// Collects `#name` and `:value` references from the given expressions,
+/// then checks that every key in `names`/`values` maps was referenced.
+pub fn validate_unused_attributes(
+    names: &HashMap<String, String>,
+    values: &HashMap<String, AttributeValue>,
+    exprs: &[&super::ast::Expr],
+    update_actions: &[&super::ast::UpdateAction],
+    key_condition_names: &std::collections::HashSet<String>,
+    key_condition_values: &std::collections::HashSet<String>,
+) -> Result<(), DynamoDbError> {
+    let mut used_names = key_condition_names.clone();
+    let mut used_values = key_condition_values.clone();
+
+    for expr in exprs {
+        collect_expr_refs(expr, &mut used_names, &mut used_values);
+    }
+    for action in update_actions {
+        collect_action_refs(action, &mut used_names, &mut used_values);
+    }
+
+    for key in names.keys() {
+        if !used_names.contains(key.strip_prefix('#').unwrap_or(key)) {
+            let display_key = if key.starts_with('#') { key.clone() } else { format!("#{key}") };
+            return Err(DynamoDbError::ValidationException(format!(
+                "Value provided in ExpressionAttributeNames unused in expressions: keys: {{{display_key}}}"
+            )));
+        }
+    }
+    for key in values.keys() {
+        if !used_values.contains(key.strip_prefix(':').unwrap_or(key)) {
+            let display_key = if key.starts_with(':') { key.clone() } else { format!(":{key}") };
+            return Err(DynamoDbError::ValidationException(format!(
+                "Value provided in ExpressionAttributeValues unused in expressions: keys: {{{display_key}}}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn collect_expr_refs(
+    expr: &super::ast::Expr,
+    names: &mut std::collections::HashSet<String>,
+    values: &mut std::collections::HashSet<String>,
+) {
+    use super::ast::Expr;
+    match expr {
+        Expr::Path(elements) => collect_path_refs(elements, names),
+        Expr::Placeholder(name) => { values.insert(name.clone()); }
+        Expr::Compare { left, right, .. } | Expr::Arithmetic { left, right, .. } => {
+            collect_expr_refs(left, names, values);
+            collect_expr_refs(right, names, values);
+        }
+        Expr::And(l, r) | Expr::Or(l, r) => {
+            collect_expr_refs(l, names, values);
+            collect_expr_refs(r, names, values);
+        }
+        Expr::Not(inner) => collect_expr_refs(inner, names, values),
+        Expr::Function { args, .. } => {
+            for arg in args { collect_expr_refs(arg, names, values); }
+        }
+        Expr::Between { operand, low, high } => {
+            collect_expr_refs(operand, names, values);
+            collect_expr_refs(low, names, values);
+            collect_expr_refs(high, names, values);
+        }
+        Expr::In { operand, list } => {
+            collect_expr_refs(operand, names, values);
+            for item in list { collect_expr_refs(item, names, values); }
+        }
+    }
+}
+
+fn collect_action_refs(
+    action: &super::ast::UpdateAction,
+    names: &mut std::collections::HashSet<String>,
+    values: &mut std::collections::HashSet<String>,
+) {
+    use super::ast::UpdateAction;
+    match action {
+        UpdateAction::Set { path, value }
+        | UpdateAction::Add { path, value }
+        | UpdateAction::Delete { path, value } => {
+            collect_path_refs(path, names);
+            collect_expr_refs(value, names, values);
+        }
+        UpdateAction::Remove { path } => collect_path_refs(path, names),
+    }
+}
+
+fn collect_path_refs(elements: &[PathElement], names: &mut std::collections::HashSet<String>) {
+    for el in elements {
+        if let PathElement::Attribute(name) = el {
+            if let Some(ref_name) = name.strip_prefix('#') {
+                names.insert(ref_name.to_owned());
+            }
+        }
+    }
+}
+
+/// Collect `#name` and `:value` references from a `KeyCondition`.
+///
+/// Returns `(used_names, used_values)` sets suitable for passing to
+/// `validate_unused_attributes`.
+pub fn collect_key_condition_refs(
+    kc: &super::key_condition::KeyCondition,
+) -> (std::collections::HashSet<String>, std::collections::HashSet<String>) {
+    let mut names = std::collections::HashSet::new();
+    let mut values = std::collections::HashSet::new();
+
+    collect_path_refs(&kc.pk_path, &mut names);
+    collect_expr_refs(&kc.pk_value, &mut names, &mut values);
+
+    if let Some(ref sk) = kc.sk_condition {
+        match sk {
+            super::key_condition::SortKeyCondition::Compare { path, value, .. } => {
+                collect_path_refs(path, &mut names);
+                collect_expr_refs(value, &mut names, &mut values);
+            }
+            super::key_condition::SortKeyCondition::Between { path, low, high } => {
+                collect_path_refs(path, &mut names);
+                collect_expr_refs(low, &mut names, &mut values);
+                collect_expr_refs(high, &mut names, &mut values);
+            }
+            super::key_condition::SortKeyCondition::BeginsWith { path, prefix } => {
+                collect_path_refs(path, &mut names);
+                collect_expr_refs(prefix, &mut names, &mut values);
+            }
+        }
+    }
+
+    for (path, expr) in &kc.extra_pk_conditions {
+        collect_path_refs(path, &mut names);
+        collect_expr_refs(expr, &mut names, &mut values);
+    }
+    for (path, expr) in &kc.extra_sk_conditions {
+        collect_path_refs(path, &mut names);
+        collect_expr_refs(expr, &mut names, &mut values);
+    }
+
+    (names, values)
+}

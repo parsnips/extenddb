@@ -105,18 +105,36 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
         .into_iter()
         .zip(input.transact_items.iter())
         .map(|(opt, tgi)| {
-            let item = match (opt, tgi.get.projection_expression.as_deref()) {
-                (Some(item), Some(proj_str)) => {
-                    let proj_tokens =
-                        tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
-                    let projection = parse_projection(&proj_tokens)?;
-                    let maps =
-                        build_expression_maps(tgi.get.expression_attribute_names.as_ref(), None);
-                    Some(apply_projection(&item, &projection, &maps)?)
+            let maps =
+                build_expression_maps(tgi.get.expression_attribute_names.as_ref(), None);
+            // Validate unused expression attribute names
+            if let Some(ref proj_str) = tgi.get.projection_expression {
+                let proj_tokens =
+                    tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
+                let projection = parse_projection(&proj_tokens)?;
+                let mut extra_names = std::collections::HashSet::new();
+                for path in &projection {
+                    for el in path {
+                        if let extenddb_core::expression::PathElement::Attribute(name) = el {
+                            if let Some(ref_name) = name.strip_prefix('#') {
+                                extra_names.insert(ref_name.to_owned());
+                            }
+                        }
+                    }
                 }
-                (item, _) => item,
-            };
-            Ok(ItemResponse { item })
+                extenddb_core::expression::validate_unused_attributes(
+                    &maps.names, &maps.values, &[], &[],
+                    &extra_names, &std::collections::HashSet::new(),
+                )?;
+                let item = opt.map(|item| apply_projection(&item, &projection, &maps)).transpose()?;
+                Ok(ItemResponse { item })
+            } else {
+                extenddb_core::expression::validate_unused_attributes(
+                    &maps.names, &maps.values, &[], &[],
+                    &std::collections::HashSet::new(), &std::collections::HashSet::new(),
+                )?;
+                Ok(ItemResponse { item: opt })
+            }
         })
         .collect::<Result<Vec<_>, DynamoDbError>>()?;
 

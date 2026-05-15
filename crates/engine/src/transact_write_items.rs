@@ -203,6 +203,13 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             put.expression_attribute_values.as_ref(),
         );
         let condition = parse_optional_condition(put.condition_expression.as_deref(), &ctx.limits)?;
+        {
+            let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
+            extenddb_core::expression::validate_unused_attributes(
+                &maps.names, &maps.values, &exprs, &[],
+                &HashSet::new(), &HashSet::new(),
+            )?;
+        }
         let stream =
             stream_capture::stream_view_type(&key_info).map(|vt| extenddb_storage::StreamCapture {
                 view_type: vt,
@@ -230,6 +237,13 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             del.expression_attribute_values.as_ref(),
         );
         let condition = parse_optional_condition(del.condition_expression.as_deref(), &ctx.limits)?;
+        {
+            let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
+            extenddb_core::expression::validate_unused_attributes(
+                &maps.names, &maps.values, &exprs, &[],
+                &HashSet::new(), &HashSet::new(),
+            )?;
+        }
         let stream =
             stream_capture::stream_view_type(&key_info).map(|vt| extenddb_storage::StreamCapture {
                 view_type: vt,
@@ -263,6 +277,14 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
         let actions = parse_update(&update_tokens)?;
         validate_no_key_updates(&actions, &key_info, &maps)?;
         let condition = parse_optional_condition(upd.condition_expression.as_deref(), &ctx.limits)?;
+        {
+            let exprs: Vec<&extenddb_core::expression::Expr> = condition.iter().collect();
+            extenddb_core::expression::validate_unused_attributes(
+                &maps.names, &maps.values, &exprs,
+                &actions.iter().collect::<Vec<_>>(),
+                &HashSet::new(), &HashSet::new(),
+            )?;
+        }
         let stream =
             stream_capture::stream_view_type(&key_info).map(|vt| extenddb_storage::StreamCapture {
                 view_type: vt,
@@ -298,6 +320,13 @@ async fn prepare_write_op<S: TableEngine + DataEngine>(
             &tokens,
             ctx.limits.max_expression_depth,
         )?;
+        {
+            let exprs: Vec<&extenddb_core::expression::Expr> = vec![&condition];
+            extenddb_core::expression::validate_unused_attributes(
+                &maps.names, &maps.values, &exprs, &[],
+                &HashSet::new(), &HashSet::new(),
+            )?;
+        }
         return Ok(PreparedOp::ConditionCheck {
             key_info,
             key: cc.key.clone(),

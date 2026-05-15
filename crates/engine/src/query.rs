@@ -158,6 +158,28 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
         None
     };
 
+    // Validate unused expression attributes
+    {
+        let exprs: Vec<&extenddb_core::expression::Expr> = filter.iter().collect();
+        let (mut kc_names, kc_values) = extenddb_core::expression::collect_key_condition_refs(&key_condition);
+        // Collect #name refs from projection paths
+        if let Some(ref proj) = projection {
+            for path in proj {
+                for el in path {
+                    if let PathElement::Attribute(name) = el {
+                        if let Some(ref_name) = name.strip_prefix('#') {
+                            kc_names.insert(ref_name.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+        extenddb_core::expression::validate_unused_attributes(
+            &maps.names, &maps.values, &exprs, &[],
+            &kc_names, &kc_values,
+        )?;
+    }
+
     // Validate Select vs ProjectionExpression and index requirements
     if let Some(Select::AllProjectedAttributes) = input.select {
         if index_info.is_none() {
