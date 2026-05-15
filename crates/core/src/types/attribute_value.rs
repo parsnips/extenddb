@@ -359,7 +359,7 @@ mod tests {
     fn empty_binary_set_rejected() {
         let json = r#"{"BS":[]}"#;
         let err = serde_json::from_str::<AttributeValue>(json).unwrap_err();
-        assert!(err.to_string().contains("may not be empty"));
+        assert!(err.to_string().contains("should not be empty"));
     }
 
     #[test]
