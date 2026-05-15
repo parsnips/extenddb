@@ -77,7 +77,7 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
         }
         (None, Some(_)) => {
             return Err(DynamoDbError::ValidationException(
-                "The Segment parameter is required but was not present in the request when TotalSegments parameter is present"
+                "The Segment parameter is required but was not present in the request when parameter TotalSegments is present"
                     .to_owned(),
             ));
         }
@@ -87,11 +87,11 @@ pub async fn handle_scan<S: TableEngine + DataEngine>(
                     "The parameter TotalSegments should be greater than or equal to 1".to_owned(),
                 ));
             }
-            if seg < 0 || seg >= total {
-                return Err(DynamoDbError::ValidationException(
-                    "The Segment parameter is zero-based and must be less than parameter TotalSegments"
-                        .to_owned(),
-                ));
+            if seg >= total {
+                return Err(DynamoDbError::ValidationException(format!(
+                    "The Segment parameter is zero-based and must be less than parameter TotalSegments: \
+                     Segment: {seg} is not less than TotalSegments: {total}"
+                )));
             }
         }
         (None, None) => {}

@@ -42,16 +42,18 @@ pub async fn handle_batch_get_item<S: TableEngine + DataEngine>(
     // Validate: RequestItems must not be empty
     if input.request_items.is_empty() {
         return Err(DynamoDbError::ValidationException(
-            "1 validation error detected: Value null at 'requestItems' failed to satisfy constraint: Member must not be null".to_owned(),
+            "The requestItems parameter is required for BatchGetItem".to_owned(),
         ));
     }
 
-    // Validate: total keys across all tables <= 100
-    let total_keys: usize = input.request_items.values().map(|ka| ka.keys.len()).sum();
-    if total_keys > MAX_BATCH_GET_KEYS {
-        return Err(DynamoDbError::ValidationException(
-            "Too many items requested for the BatchGetItem call".to_owned(),
-        ));
+    // Validate: per-table keys <= 100
+    for (table_name, ka) in &input.request_items {
+        if ka.keys.len() > MAX_BATCH_GET_KEYS {
+            return Err(DynamoDbError::ValidationException(format!(
+                "1 validation error detected: Value at 'RequestItems.{table_name}.member.Keys' failed to satisfy constraint: \
+                 Member must have length less than or equal to 100"
+            )));
+        }
     }
 
     // Validate: each table must have at least one key

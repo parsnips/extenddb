@@ -65,6 +65,94 @@ pub fn parse_update(tokens: &[Token]) -> Result<Vec<UpdateAction>, DynamoDbError
     Ok(actions)
 }
 
+/// Parse an update expression with DynamoDB-compatible syntax error messages.
+pub fn parse_update_from(
+    tokens: &[Token],
+    source: &str,
+) -> Result<Vec<UpdateAction>, DynamoDbError> {
+    let mut pos = 0;
+    let mut actions = Vec::new();
+
+    while pos < tokens.len() {
+        match &tokens[pos] {
+            Token::Set => {
+                pos += 1;
+                parse_set_actions(tokens, &mut pos, &mut actions)?;
+            }
+            Token::Remove => {
+                pos += 1;
+                parse_remove_actions(tokens, &mut pos, &mut actions)?;
+            }
+            Token::Add => {
+                pos += 1;
+                parse_add_actions(tokens, &mut pos, &mut actions)?;
+            }
+            Token::Delete => {
+                pos += 1;
+                parse_delete_actions(tokens, &mut pos, &mut actions)?;
+            }
+            token => {
+                let token_text = token_display_text(token);
+                let near = build_near_context(source, &token_text);
+                return Err(validation_err(&format!(
+                    "Invalid UpdateExpression: Syntax error; token: \"{token_text}\", near: \"{near}\""
+                )));
+            }
+        }
+    }
+
+    if actions.is_empty() {
+        return Err(validation_err(
+            "Invalid UpdateExpression: expression must contain at least one action",
+        ));
+    }
+
+    Ok(actions)
+}
+
+fn token_display_text(token: &Token) -> String {
+    match token {
+        Token::Ident(s) => s.clone(),
+        Token::NameRef(s) => format!("#{s}"),
+        Token::Placeholder(s) => format!(":{s}"),
+        Token::Eq => "=".to_owned(),
+        Token::Ne => "<>".to_owned(),
+        Token::Lt => "<".to_owned(),
+        Token::Le => "<=".to_owned(),
+        Token::Gt => ">".to_owned(),
+        Token::Ge => ">=".to_owned(),
+        Token::Plus => "+".to_owned(),
+        Token::Minus => "-".to_owned(),
+        Token::Comma => ",".to_owned(),
+        Token::Dot => ".".to_owned(),
+        Token::LBracket => "[".to_owned(),
+        Token::RBracket => "]".to_owned(),
+        Token::LParen => "(".to_owned(),
+        Token::RParen => ")".to_owned(),
+        Token::And => "AND".to_owned(),
+        Token::Or => "OR".to_owned(),
+        Token::Not => "NOT".to_owned(),
+        Token::Between => "BETWEEN".to_owned(),
+        Token::In => "IN".to_owned(),
+        Token::Set => "SET".to_owned(),
+        Token::Remove => "REMOVE".to_owned(),
+        Token::Add => "ADD".to_owned(),
+        Token::Delete => "DELETE".to_owned(),
+    }
+}
+
+fn build_near_context(source: &str, token_text: &str) -> String {
+    if source.is_empty() {
+        return token_text.to_owned();
+    }
+    if let Some(start) = source.find(token_text) {
+        let end = std::cmp::min(start + token_text.len() + 7, source.len());
+        source[start..end].trim_end().to_owned()
+    } else {
+        token_text.to_owned()
+    }
+}
+
 fn parse_set_actions(
     tokens: &[Token],
     pos: &mut usize,

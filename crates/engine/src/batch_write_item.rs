@@ -48,16 +48,19 @@ pub async fn handle_batch_write_item<S: TableEngine + DataEngine>(
     // Validate: RequestItems must not be empty
     if input.request_items.is_empty() {
         return Err(DynamoDbError::ValidationException(
-            "1 validation error detected: Value null at 'requestItems' failed to satisfy constraint: Member must not be null".to_owned(),
+            "The requestItems parameter is required for BatchWriteItem".to_owned(),
         ));
     }
 
-    // Validate: total operations across all tables <= 25
-    let total_ops: usize = input.request_items.values().map(Vec::len).sum();
-    if total_ops > MAX_BATCH_WRITE_ITEMS {
-        return Err(DynamoDbError::ValidationException(
-            "Too many items requested for the BatchWriteItem call".to_owned(),
-        ));
+    // Validate: per-table operations <= 25
+    for (table_name, reqs) in &input.request_items {
+        if reqs.len() > MAX_BATCH_WRITE_ITEMS {
+            return Err(DynamoDbError::ValidationException(format!(
+                "1 validation error detected: Value at 'requestItems.{table_name}' failed to satisfy constraint: \
+                 Map value must satisfy constraint: [Member must have length less than or equal to 25, \
+                 Member must have length greater than or equal to 1]"
+            )));
+        }
     }
 
     // Validate: each table must have at least one request

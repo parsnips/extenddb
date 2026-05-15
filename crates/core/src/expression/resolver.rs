@@ -72,6 +72,19 @@ impl ExpressionMaps {
         })
     }
 
+    /// Like [`resolve_value`](Self::resolve_value) but prefixes the error with the expression type.
+    pub fn resolve_value_for(
+        &self,
+        placeholder: &str,
+        expr_type: &str,
+    ) -> Result<&AttributeValue, DynamoDbError> {
+        self.values.get(placeholder).ok_or_else(|| {
+            DynamoDbError::ValidationException(format!(
+                "Invalid {expr_type}: An expression attribute value used in expression is not defined; attribute value: :{placeholder}"
+            ))
+        })
+    }
+
     /// Pre-parse all numeric placeholder values into `BigDecimal`.
     ///
     /// Call once per request before evaluating filter expressions against

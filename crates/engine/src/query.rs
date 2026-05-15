@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::expression::PathElement;
-use extenddb_core::expression::{parse_key_condition, parse_projection, tokenize_with_limit};
+use extenddb_core::expression::{parse_key_condition, parse_projection, tokenize_for};
 use extenddb_core::types::{
     IndexType, QueryInput, QueryOutput, Select, TableKeyInfo, item_size_bytes,
 };
@@ -72,9 +72,9 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
     // Validate Limit >= 1 (REQ-QUERY-001)
     if let Some(limit) = input.limit {
         if limit < 1 {
-            return Err(DynamoDbError::ValidationException(format!(
-                "1 validation error detected: Value '{limit}' at 'limit' failed to satisfy constraint: Member must have value greater than or equal to 1"
-            )));
+            return Err(DynamoDbError::ValidationException(
+                "1 validation error detected: Value at 'Limit' failed to satisfy constraint: Member must have value greater than or equal to 1".to_owned(),
+            ));
         }
     }
 
@@ -106,7 +106,7 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
                 .to_owned(),
         )
     })?;
-    let tokens = tokenize_with_limit(kce_str, ctx.limits.max_expression_tokens)?;
+    let tokens = tokenize_for(kce_str, ctx.limits.max_expression_tokens, "KeyConditionExpression")?;
     let mut key_condition = parse_key_condition(&tokens)?;
 
     // Correct PK/SK assignment when both clauses are equality comparisons.
@@ -152,7 +152,7 @@ pub async fn handle_query<S: TableEngine + DataEngine>(
 
     // Parse ProjectionExpression
     let projection = if let Some(ref proj_str) = input.projection_expression {
-        let proj_tokens = tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
+        let proj_tokens = tokenize_for(proj_str, ctx.limits.max_expression_tokens, "ProjectionExpression")?;
         Some(parse_projection(&proj_tokens)?)
     } else {
         None

@@ -6,7 +6,7 @@
 use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
-use extenddb_core::expression::{apply_projection, parse_projection, tokenize_with_limit};
+use extenddb_core::expression::{apply_projection, parse_projection, tokenize_for};
 use extenddb_core::types::{
     ItemResponse, TransactGetItemsInput, TransactGetItemsOutput, item_size_bytes,
 };
@@ -38,13 +38,13 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
 
     if input.transact_items.is_empty() {
         return Err(DynamoDbError::ValidationException(
-            "1 validation error detected: Value null at 'transactItems' failed to satisfy constraint: Member must not be null".to_owned(),
+            "1 validation error detected: Value '[]' at 'transactItems' failed to satisfy constraint: Member must have length greater than or equal to 1".to_owned(),
         ));
     }
 
     if input.transact_items.len() > MAX_TRANSACT_GET_ITEMS {
         return Err(DynamoDbError::ValidationException(
-            "Member must have length less than or equal to 100".to_owned(),
+            "1 validation error detected: Value at 'transactItems' failed to satisfy constraint: Member must have length less than or equal to 100".to_owned(),
         ));
     }
 
@@ -107,10 +107,9 @@ pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
         .map(|(opt, tgi)| {
             let maps =
                 build_expression_maps(tgi.get.expression_attribute_names.as_ref(), None);
-            // Validate unused expression attribute names
             if let Some(ref proj_str) = tgi.get.projection_expression {
                 let proj_tokens =
-                    tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
+                    tokenize_for(proj_str, ctx.limits.max_expression_tokens, "ProjectionExpression")?;
                 let projection = parse_projection(&proj_tokens)?;
                 let mut extra_names = std::collections::HashSet::new();
                 for path in &projection {

@@ -61,7 +61,7 @@ fn evaluate_set_value(
     maps: &ExpressionMaps,
 ) -> Result<AttributeValue, DynamoDbError> {
     match expr {
-        Expr::Placeholder(name) => Ok(maps.resolve_value(name)?.clone()),
+        Expr::Placeholder(name) => Ok(maps.resolve_value_for(name, "UpdateExpression")?.clone()),
         Expr::Path(elements) => {
             resolve_path_to_value(elements, item, maps)?
                 .cloned()

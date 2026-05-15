@@ -9,6 +9,8 @@
 pub enum ErrorMessageKey {
     TableNameTooShort,
     TableNameTooLong,
+    TableNameNull,
+    TableNameEmpty,
     TableNameInvalidChars,
     TableNotFound,
     TableAlreadyExists,
@@ -27,9 +29,17 @@ pub enum ErrorMessageKey {
 #[must_use]
 pub fn error_message(key: ErrorMessageKey, args: &[&str]) -> String {
     match key {
-        ErrorMessageKey::TableNameTooShort | ErrorMessageKey::TableNameTooLong => {
-            "TableName must be at least 3 characters long and at most 255 characters long"
-                .to_owned()
+        ErrorMessageKey::TableNameTooShort => {
+            format!("1 validation error detected: Value '{}' at 'tableName' failed to satisfy constraint: Member must have length greater than or equal to 3", args[0])
+        }
+        ErrorMessageKey::TableNameTooLong => {
+            format!("1 validation error detected: Value '{}' at 'tableName' failed to satisfy constraint: Member must have length less than or equal to 255", args[0])
+        }
+        ErrorMessageKey::TableNameNull => {
+            "1 validation error detected: Value null at 'tableName' failed to satisfy constraint: Member must not be null".to_owned()
+        }
+        ErrorMessageKey::TableNameEmpty => {
+            "1 validation error detected: Value '' at 'tableName' failed to satisfy constraint: Member must have length greater than or equal to 1".to_owned()
         }
         ErrorMessageKey::TableNameInvalidChars => {
             format!(

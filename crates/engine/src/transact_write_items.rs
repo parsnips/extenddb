@@ -56,13 +56,13 @@ pub async fn handle_transact_write_items<S: TableEngine + DataEngine>(
 
     if input.transact_items.is_empty() {
         return Err(DynamoDbError::ValidationException(
-            "1 validation error detected: Value null at 'transactItems' failed to satisfy constraint: Member must not be null".to_owned(),
+            "1 validation error detected: Value '[]' at 'transactItems' failed to satisfy constraint: Member must have length greater than or equal to 1".to_owned(),
         ));
     }
 
     if input.transact_items.len() > MAX_TRANSACT_WRITE_ITEMS {
         return Err(DynamoDbError::ValidationException(
-            "Member must have length less than or equal to 100".to_owned(),
+            "1 validation error detected: Value at 'transactItems' failed to satisfy constraint: Member must have length less than or equal to 100".to_owned(),
         ));
     }
 

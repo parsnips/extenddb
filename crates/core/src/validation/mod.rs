@@ -13,10 +13,22 @@ use crate::types::{
 /// Validate a table name per Virtual `DynamoDB` rules.
 /// REQ-LIM-020: 3-255 chars. REQ-LIM-021: [a-zA-Z0-9_.-]
 pub fn validate_table_name(name: &str, limits: &LimitsConfig) -> Result<(), DynamoDbError> {
-    if name.len() < limits.min_table_name_length || name.len() > limits.max_table_name_length {
+    if name.is_empty() {
+        return Err(DynamoDbError::ValidationException(error_message(
+            ErrorMessageKey::TableNameEmpty,
+            &[],
+        )));
+    }
+    if name.len() < limits.min_table_name_length {
         return Err(DynamoDbError::ValidationException(error_message(
             ErrorMessageKey::TableNameTooShort,
-            &[],
+            &[name],
+        )));
+    }
+    if name.len() > limits.max_table_name_length {
+        return Err(DynamoDbError::ValidationException(error_message(
+            ErrorMessageKey::TableNameTooLong,
+            &[name],
         )));
     }
     validate_table_name_chars(name)?;

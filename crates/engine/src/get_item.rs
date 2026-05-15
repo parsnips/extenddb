@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use extenddb_core::error::DynamoDbError;
-use extenddb_core::expression::{apply_projection, parse_projection, tokenize_with_limit};
+use extenddb_core::expression::{apply_projection, parse_projection, tokenize_for};
 use extenddb_core::types::GetItemInput;
 use extenddb_core::types::GetItemOutput;
 use extenddb_core::types::item_size_bytes;
@@ -106,7 +106,7 @@ pub async fn handle_get_item<S: TableEngine + DataEngine>(
 
     let item = match (&effective_projection, item) {
         (Some(proj_str), Some(fetched)) => {
-            let proj_tokens = tokenize_with_limit(proj_str, ctx.limits.max_expression_tokens)?;
+            let proj_tokens = tokenize_for(proj_str, ctx.limits.max_expression_tokens, "ProjectionExpression")?;
             let projection = parse_projection(&proj_tokens)?;
             let maps = build_expression_maps(effective_proj_names.as_ref(), None);
             Some(apply_projection(&fetched, &projection, &maps)?)
