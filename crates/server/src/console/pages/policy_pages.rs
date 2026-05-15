@@ -11,10 +11,6 @@ use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
@@ -23,10 +19,8 @@ use super::{CsrfOnly, identity_label, is_admin, op_error_message, require_csrf, 
 // ── User policies ──────────────────────────────────────────────────────
 
 /// GET /console/accounts/{id}/users/{name}/policies/new
-pub async fn new_user_policy_form<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn new_user_policy_form(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
@@ -34,10 +28,8 @@ pub async fn new_user_policy_form<
 }
 
 /// POST /console/accounts/{id}/users/{name}/policies/new
-pub async fn put_user_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn put_user_policy(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     Form(form): Form<PolicyForm>,
@@ -56,10 +48,8 @@ pub async fn put_user_policy<
 }
 
 /// POST /console/accounts/{id}/users/{name}/policies/{policy}/delete
-pub async fn delete_user_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_user_policy(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, user_name, policy_name)): Path<(String, String, String)>,
     Form(form): Form<CsrfOnly>,
@@ -81,10 +71,8 @@ pub async fn delete_user_policy<
 // ── Group policies ─────────────────────────────────────────────────────
 
 /// GET /console/accounts/{id}/groups/{name}/policies/new
-pub async fn new_group_policy_form<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn new_group_policy_form(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
 ) -> Response {
@@ -92,10 +80,8 @@ pub async fn new_group_policy_form<
 }
 
 /// POST /console/accounts/{id}/groups/{name}/policies/new
-pub async fn put_group_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn put_group_policy(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
     Form(form): Form<PolicyForm>,
@@ -114,10 +100,8 @@ pub async fn put_group_policy<
 }
 
 /// POST /console/accounts/{id}/groups/{name}/policies/{policy}/delete
-pub async fn delete_group_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_group_policy(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name, policy_name)): Path<(String, String, String)>,
     Form(form): Form<CsrfOnly>,
@@ -139,10 +123,8 @@ pub async fn delete_group_policy<
 // ── Role policies ──────────────────────────────────────────────────────
 
 /// GET /console/accounts/{id}/roles/{name}/policies/new
-pub async fn new_role_policy_form<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn new_role_policy_form(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {
@@ -150,10 +132,8 @@ pub async fn new_role_policy_form<
 }
 
 /// POST /console/accounts/{id}/roles/{name}/policies/new
-pub async fn put_role_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn put_role_policy(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
     Form(form): Form<PolicyForm>,
@@ -172,10 +152,8 @@ pub async fn put_role_policy<
 }
 
 /// POST /console/accounts/{id}/roles/{name}/policies/{policy}/delete
-pub async fn delete_role_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_role_policy(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, role_name, policy_name)): Path<(String, String, String)>,
     Form(form): Form<CsrfOnly>,
@@ -205,8 +183,8 @@ pub struct PolicyForm {
 }
 
 /// Render the "add policy" form for any entity type.
-async fn policy_form<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &Arc<ConsoleState<C>>,
+async fn policy_form(
+    state: &Arc<ConsoleState>,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,
@@ -269,8 +247,8 @@ async fn policy_form<C: SettingsStore + RateLimitStore + AdminStore + Management
 }
 
 /// Insert or replace a policy for any entity type.
-async fn put_policy<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &Arc<ConsoleState<C>>,
+async fn put_policy(
+    state: &Arc<ConsoleState>,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,
@@ -338,8 +316,8 @@ async fn put_policy<C: SettingsStore + RateLimitStore + AdminStore + ManagementS
 }
 
 /// Delete a policy for any entity type.
-async fn delete_policy<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &Arc<ConsoleState<C>>,
+async fn delete_policy(
+    state: &Arc<ConsoleState>,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,

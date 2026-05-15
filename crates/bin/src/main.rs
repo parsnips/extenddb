@@ -22,7 +22,6 @@ mod init_helpers;
 mod manage_http;
 mod manage_types;
 mod serve_helpers;
-mod ttl_worker;
 mod util;
 mod workers;
 

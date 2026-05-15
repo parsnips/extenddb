@@ -5,14 +5,13 @@ use serde_json::Value;
 use extenddb_core::error::{DynamoDbError, ErrorMessageKey, error_message};
 use extenddb_core::types::{CreateTableInput, CreateTableOutput};
 use extenddb_core::validation::validate_create_table;
-use extenddb_storage::TableEngine;
 
 use crate::OperationContext;
 use crate::serialize_output;
 
-pub async fn handle_create_table<S: TableEngine>(
+pub async fn handle_create_table(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     crate::validate_enum_fields(
         &body,

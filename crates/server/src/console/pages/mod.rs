@@ -54,9 +54,9 @@ pub struct SessionData {
 /// Extract session identity and CSRF token from the cookie header. Returns
 /// the session data or a redirect to the login page.
 #[allow(clippy::result_large_err)]
-async fn require_session<C: Send + Sync>(
+async fn require_session(
     headers: &HeaderMap,
-    state: &Arc<ConsoleState<C>>,
+    state: &Arc<ConsoleState>,
 ) -> Result<SessionData, Response> {
     let token = extract_session_token(headers);
     let result = match token {

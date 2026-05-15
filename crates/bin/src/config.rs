@@ -137,6 +137,11 @@ impl StorageConfig {
     pub fn max_catalog_connections(&self) -> u32 {
         self.config.max_catalog_connections()
     }
+
+    /// Get a reference to the underlying trait object for factory calls.
+    pub fn as_trait(&self) -> &dyn extenddb_storage::config::StorageConfig {
+        &*self.config
+    }
 }
 
 impl<'de> serde::Deserialize<'de> for StorageConfig {

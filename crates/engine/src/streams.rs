@@ -9,8 +9,6 @@ use extenddb_core::types::{
     GetShardIteratorInput, GetShardIteratorOutput, ListStreamsInput, ListStreamsOutput,
     ShardIteratorType,
 };
-use extenddb_storage::StreamEngine;
-use extenddb_storage::TableEngine;
 use extenddb_storage::error::StorageError;
 use serde_json::Value;
 
@@ -23,9 +21,9 @@ use crate::serialize_output;
 ///
 /// Returns [`DynamoDbError::ResourceNotFoundException`] if the stream does not exist.
 /// Returns [`DynamoDbError::ValidationException`] on invalid input.
-pub async fn handle_describe_stream<S: TableEngine + StreamEngine>(
+pub async fn handle_describe_stream(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: DescribeStreamInput = serde_json::from_value(body)
         .map_err(|e| DynamoDbError::SerializationException(e.to_string()))?;
@@ -47,9 +45,9 @@ pub async fn handle_describe_stream<S: TableEngine + StreamEngine>(
 /// # Errors
 ///
 /// Returns [`DynamoDbError::ValidationException`] on invalid input.
-pub async fn handle_list_streams<S: TableEngine + StreamEngine>(
+pub async fn handle_list_streams(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: ListStreamsInput = serde_json::from_value(body)
         .map_err(|e| DynamoDbError::SerializationException(e.to_string()))?;
@@ -81,9 +79,9 @@ pub async fn handle_list_streams<S: TableEngine + StreamEngine>(
 ///
 /// Returns [`DynamoDbError::ResourceNotFoundException`] if the stream/shard does not exist.
 /// Returns [`DynamoDbError::ValidationException`] on invalid input.
-pub async fn handle_get_shard_iterator<S: TableEngine + StreamEngine>(
+pub async fn handle_get_shard_iterator(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: GetShardIteratorInput = serde_json::from_value(body)
         .map_err(|e| DynamoDbError::SerializationException(e.to_string()))?;
@@ -168,9 +166,9 @@ const SHARD_ITERATOR_EXPIRY_SECS: u64 = 900;
 /// Returns [`DynamoDbError::ExpiredIteratorException`] if the iterator is older
 /// than 15 minutes.
 /// Returns [`DynamoDbError::ValidationException`] on invalid iterator.
-pub async fn handle_get_records<S: TableEngine + StreamEngine>(
+pub async fn handle_get_records(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: GetRecordsInput = serde_json::from_value(body)
         .map_err(|e| DynamoDbError::SerializationException(e.to_string()))?;

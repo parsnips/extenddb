@@ -11,10 +11,6 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::is_valid_iam_name;
@@ -52,10 +48,8 @@ pub struct TagEntry {
 }
 
 /// `POST /management/accounts/{id}/roles` — create an IAM role.
-pub async fn create_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn create_role(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
     axum::Json(body): axum::Json<CreateRoleRequest>,
@@ -89,10 +83,8 @@ pub async fn create_role<
 }
 
 /// `GET /management/accounts/{id}/roles` — list IAM roles in an account.
-pub async fn list_roles<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_roles(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
 ) -> Response {
@@ -128,10 +120,8 @@ pub async fn list_roles<
 }
 
 /// `DELETE /management/accounts/{id}/roles/{name}` — delete an IAM role.
-pub async fn delete_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_role(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {
@@ -152,10 +142,8 @@ pub async fn delete_role<
 }
 
 /// `PUT /management/accounts/{id}/roles/{name}/tags` — tag an IAM role.
-pub async fn tag_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn tag_role(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<TagRequest>,
@@ -204,10 +192,8 @@ pub async fn tag_role<
 }
 
 /// `DELETE /management/accounts/{id}/roles/{name}/tags` — untag an IAM role.
-pub async fn untag_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn untag_role(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<UntagRequest>,
@@ -237,10 +223,8 @@ pub async fn untag_role<
 }
 
 /// `GET /management/accounts/{id}/roles/{name}/tags` — list tags for an IAM role.
-pub async fn list_role_tags<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_role_tags(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {

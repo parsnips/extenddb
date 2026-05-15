@@ -12,20 +12,14 @@ use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
 use super::{CsrfOnly, identity_label, is_admin, op_error_message, require_csrf, require_session};
 
 /// GET /console/accounts/{id}/roles/new
-pub async fn new_role_form<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn new_role_form(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
 ) -> Response {
@@ -87,10 +81,8 @@ pub struct CreateRoleForm {
     trust_policy: String,
 }
 
-pub async fn create_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn create_role(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
     Form(form): Form<CreateRoleForm>,
@@ -151,10 +143,8 @@ pub async fn create_role<
 }
 
 /// GET /console/accounts/{id}/roles/{name}
-pub async fn role_detail<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn role_detail(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {
@@ -260,10 +250,8 @@ pub async fn role_detail<
 }
 
 /// POST /console/accounts/{id}/roles/{name}/delete
-pub async fn delete_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_role(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
     Form(form): Form<CsrfOnly>,

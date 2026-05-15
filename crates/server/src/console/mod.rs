@@ -25,13 +25,10 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::{get, post};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
 use session::SessionStore;
 
 /// Shared state for console handlers.
-pub struct ConsoleState<C> {
+pub struct ConsoleState {
     pub sessions: SessionStore,
     /// Version string displayed in the console footer (e.g. "0.1.0 · catalog 2.1.0 · abc1234").
     pub version_info: Arc<str>,
@@ -43,15 +40,14 @@ pub struct ConsoleState<C> {
     /// Populated at server startup. Values for sensitive keys are pre-redacted.
     pub config_entries: Vec<(String, String)>,
     /// Catalog store implementing operational storage traits.
-    pub catalog_store: Arc<C>,
+    pub catalog_store: Arc<dyn extenddb_storage::CatalogStore>,
     /// Runtime documentation store. `None` if `docs_dir` is not configured or
     /// the directory is missing/invalid.
     pub docs_store: Option<docs_embed::DocsStore>,
 }
 
 /// Build the console router.
-pub fn router<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static>()
--> Router<Arc<ConsoleState<C>>> {
+pub fn router() -> Router<Arc<ConsoleState>> {
     Router::new()
         // Login
         .route("/login", get(pages::login_page))

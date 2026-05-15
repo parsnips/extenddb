@@ -72,7 +72,7 @@ pub struct AdminEntry {
 }
 
 /// A single metrics row from persistent storage.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MetricsRow {
     pub bucket: time::OffsetDateTime,
     pub metric: String,

@@ -10,19 +10,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::Value;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::is_valid_iam_name;
 use super::ops::{OpError, op_err_to_response};
 
-pub async fn set_user_boundary<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn set_user_boundary(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     axum::Json(document): axum::Json<Value>,
@@ -30,30 +24,24 @@ pub async fn set_user_boundary<
     set_boundary(&state, &headers, &account_id, "user", &user_name, &document).await
 }
 
-pub async fn get_user_boundary<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn get_user_boundary(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
     get_boundary(&state, &headers, &account_id, "user", &user_name).await
 }
 
-pub async fn delete_user_boundary<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_user_boundary(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
     delete_boundary(&state, &headers, &account_id, "user", &user_name).await
 }
 
-pub async fn set_role_boundary<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn set_role_boundary(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
     axum::Json(document): axum::Json<Value>,
@@ -61,28 +49,24 @@ pub async fn set_role_boundary<
     set_boundary(&state, &headers, &account_id, "role", &role_name, &document).await
 }
 
-pub async fn get_role_boundary<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn get_role_boundary(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {
     get_boundary(&state, &headers, &account_id, "role", &role_name).await
 }
 
-pub async fn delete_role_boundary<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_role_boundary(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {
     delete_boundary(&state, &headers, &account_id, "role", &role_name).await
 }
 
-async fn set_boundary<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &ManagementState<C>,
+async fn set_boundary(
+    state: &ManagementState,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,
@@ -133,8 +117,8 @@ async fn set_boundary<C: SettingsStore + RateLimitStore + AdminStore + Managemen
     }
 }
 
-async fn get_boundary<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &ManagementState<C>,
+async fn get_boundary(
+    state: &ManagementState,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,
@@ -180,8 +164,8 @@ async fn get_boundary<C: SettingsStore + RateLimitStore + AdminStore + Managemen
     }
 }
 
-async fn delete_boundary<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &ManagementState<C>,
+async fn delete_boundary(
+    state: &ManagementState,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,

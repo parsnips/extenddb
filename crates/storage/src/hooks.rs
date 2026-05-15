@@ -13,6 +13,7 @@ use tracing_subscriber::{EnvFilter, Registry, reload};
 /// Contains shared resources that backend-specific workers might need.
 pub struct WorkerContext {
     pub metrics: Arc<extenddb_core::metrics::MetricsCollector>,
+    pub catalog_store: Arc<dyn crate::CatalogStore>,
     pub reload_handle: reload::Handle<EnvFilter, Registry>,
     pub config_log_level: String,
 }

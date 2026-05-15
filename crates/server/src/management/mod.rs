@@ -32,23 +32,14 @@ use axum::routing::{delete, get, post, put};
 
 pub use auth::CallerIdentity;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 /// Shared state for management API handlers.
-///
-/// Generic over `C`, the catalog store type that implements operational
-/// storage traits (`SettingsStore`, `RateLimitStore`, `AdminStore`,
-/// `ManagementStore`).
-pub struct ManagementState<C> {
+pub struct ManagementState {
     /// Catalog store implementing operational storage traits.
-    pub catalog_store: Arc<C>,
+    pub catalog_store: Arc<dyn extenddb_storage::CatalogStore>,
 }
 
 /// Build the management API router.
-pub fn router<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static>()
--> Router<Arc<ManagementState<C>>> {
+pub fn router() -> Router<Arc<ManagementState>> {
     Router::new()
         // Admin user endpoints
         .route("/admins", post(admin::create_admin))

@@ -15,7 +15,6 @@ use std::sync::Arc;
 
 use extenddb_core::throttle::ThrottleManager;
 use extenddb_storage::management_store::{MetricsStore, RateLimitStore, SettingsStore};
-use extenddb_storage::{DataEngine, MetadataEngine, StreamEngine, WorkerStore};
 use tracing_subscriber::{EnvFilter, reload};
 
 /// Poll the `log_level` and `sqlx_log_level` settings from the database
@@ -23,8 +22,8 @@ use tracing_subscriber::{EnvFilter, reload};
 /// The combined filter is `{log_level},sqlx={sqlx_log_level}`.
 /// Falls back to `config_level` when `log_level` is absent from the DB.
 /// Runs until the process exits.
-pub(crate) async fn poll_log_level<S: SettingsStore>(
-    store: Arc<S>,
+pub(crate) async fn poll_log_level(
+    store: Arc<dyn SettingsStore>,
     handle: reload::Handle<EnvFilter, tracing_subscriber::Registry>,
     config_level: String,
 ) {
@@ -96,8 +95,8 @@ pub(crate) async fn poll_log_level<S: SettingsStore>(
 /// Poll the `throttling_enabled` runtime setting and update the
 /// `ThrottleManager` when it changes. This allows enabling/disabling
 /// throttling at runtime via `extenddb settings set throttling_enabled true`.
-pub(crate) async fn poll_throttling_enabled<S: SettingsStore>(
-    store: Arc<S>,
+pub(crate) async fn poll_throttling_enabled(
+    store: Arc<dyn SettingsStore>,
     throttle: Arc<ThrottleManager>,
     config_enabled: bool,
 ) {
@@ -125,173 +124,6 @@ pub(crate) async fn poll_throttling_enabled<S: SettingsStore>(
             );
             throttle.set_enabled(new_enabled);
             current = new_enabled;
-        }
-    }
-}
-
-/// F-3: Event-driven control plane transition poller.
-///
-/// Blocks on a `Notify` until a `CreateTable` or `DeleteTable` wakes it.
-/// Once woken, polls every second until no work remains, then returns
-/// to idle. A 60-second timeout provides a defensive sweep even if a
-/// notification is missed.
-pub(crate) async fn poll_control_plane_transitions<W: WorkerStore, S: SettingsStore>(
-    storage: Arc<W>,
-    notify: Arc<tokio::sync::Notify>,
-    settings: Arc<S>,
-) {
-    use std::time::Duration;
-
-    const ACTIVE_POLL: Duration = Duration::from_secs(1);
-    const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
-    const MARGIN_SECS: f64 = 5.0;
-
-    loop {
-        // Idle: wait for a wake signal or timeout (defensive sweep).
-        let _ = tokio::time::timeout(IDLE_TIMEOUT, notify.notified()).await;
-
-        // Read control_plane_delay_seconds from settings to compute active window.
-        let delay_secs = read_control_plane_delay(&*settings).await;
-        let active_window = Duration::from_secs_f64(delay_secs + MARGIN_SECS);
-
-        // Active: poll every second for active_window. The notification fires
-        // at commit time, but the transition is scheduled delay-seconds in the
-        // future. We must keep polling until the transition actually fires.
-        let deadline = tokio::time::Instant::now() + active_window;
-        loop {
-            match storage.process_control_plane_transitions().await {
-                Ok(ref t) if t.is_empty() => {}
-                Ok(transitions) => {
-                    // D-4: Log meaningful state changes, not poll ticks.
-                    for (name, transition) in &transitions {
-                        tracing::info!("Table '{name}': {transition}");
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Control plane transition poll failed: {e}");
-                    break;
-                }
-            }
-            if tokio::time::Instant::now() >= deadline {
-                break;
-            }
-            tokio::time::sleep(ACTIVE_POLL).await;
-        }
-    }
-}
-
-/// Read `control_plane_delay_seconds` from the settings store.
-/// Returns 0.25 on any error (store unreachable, missing key, parse failure).
-async fn read_control_plane_delay<S: SettingsStore + ?Sized>(store: &S) -> f64 {
-    store
-        .get_setting("control_plane_delay_seconds")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|v| v.parse::<f64>().ok())
-        .filter(|&v| v >= 0.0)
-        .unwrap_or(0.25)
-}
-
-/// REQ-CTRL-004: Background worker that periodically recomputes
-/// `TableSizeBytes` and `ItemCount` for all active tables across all accounts.
-pub(crate) async fn table_size_refresh_worker<E: MetadataEngine>(storage: Arc<E>) {
-    use std::time::Duration;
-
-    // DynamoDB updates these approximately every 6 hours. We use 5 minutes
-    // for faster feedback in local development.
-    const REFRESH_INTERVAL: Duration = Duration::from_secs(300);
-
-    loop {
-        tokio::time::sleep(REFRESH_INTERVAL).await;
-
-        let tables = match storage.all_active_tables().await {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!("Size refresh worker: failed to list tables: {e}");
-                continue;
-            }
-        };
-
-        for (account_id, table_name) in &tables {
-            if let Err(e) = storage.refresh_table_size(account_id, table_name).await {
-                tracing::warn!("Size refresh worker: failed for {table_name}: {e}");
-            }
-        }
-    }
-}
-
-/// Background worker that periodically deletes expired stream records.
-/// `DynamoDB` retains stream records for 24 hours.
-pub(crate) async fn stream_record_cleanup_worker<E: StreamEngine>(
-    storage: Arc<E>,
-    metrics: Arc<extenddb_core::metrics::MetricsCollector>,
-) {
-    use extenddb_core::metrics::QuerySource;
-    use std::time::Duration;
-
-    const CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
-    const RETENTION_HOURS: i64 = 24;
-
-    loop {
-        tokio::time::sleep(CLEANUP_INTERVAL).await;
-        let cycle_start = std::time::Instant::now();
-        match storage
-            .cleanup_expired_stream_records(RETENTION_HOURS)
-            .await
-        {
-            Ok(0) => {
-                #[allow(clippy::cast_precision_loss)]
-                let cycle_us = cycle_start.elapsed().as_micros() as f64;
-                metrics.record_worker_success(QuerySource::StreamCleanup, cycle_us);
-            }
-            Ok(n) => {
-                tracing::info!("Stream cleanup worker: deleted {n} expired record(s)");
-                #[allow(clippy::cast_precision_loss)]
-                let cycle_us = cycle_start.elapsed().as_micros() as f64;
-                metrics.record_worker_success(QuerySource::StreamCleanup, cycle_us);
-            }
-            Err(e) => {
-                tracing::warn!("Stream cleanup worker: {e}");
-                metrics.record_worker_error(QuerySource::StreamCleanup);
-            }
-        }
-    }
-}
-
-/// Background worker that deletes expired idempotency tokens (>10 min old).
-pub(crate) async fn idempotency_token_cleanup_worker<E: DataEngine>(
-    storage: Arc<E>,
-    metrics: Arc<extenddb_core::metrics::MetricsCollector>,
-) {
-    use extenddb_core::metrics::QuerySource;
-    use std::time::Duration;
-
-    const CLEANUP_INTERVAL: Duration = Duration::from_secs(600);
-    const MAX_AGE_SECONDS: i64 = 600;
-
-    loop {
-        tokio::time::sleep(CLEANUP_INTERVAL).await;
-        let cycle_start = std::time::Instant::now();
-        match storage
-            .cleanup_expired_idempotency_tokens(MAX_AGE_SECONDS)
-            .await
-        {
-            Ok(0) => {
-                #[allow(clippy::cast_precision_loss)]
-                let cycle_us = cycle_start.elapsed().as_micros() as f64;
-                metrics.record_worker_success(QuerySource::IdempotencyCleanup, cycle_us);
-            }
-            Ok(n) => {
-                tracing::info!("Idempotency cleanup worker: deleted {n} expired token(s)");
-                #[allow(clippy::cast_precision_loss)]
-                let cycle_us = cycle_start.elapsed().as_micros() as f64;
-                metrics.record_worker_success(QuerySource::IdempotencyCleanup, cycle_us);
-            }
-            Err(e) => {
-                tracing::warn!("Idempotency cleanup worker: {e}");
-                metrics.record_worker_error(QuerySource::IdempotencyCleanup);
-            }
         }
     }
 }
@@ -341,9 +173,9 @@ pub(crate) async fn metrics_prune_worker(metrics: Arc<extenddb_core::metrics::Me
 /// Drains data points older than 60 seconds, aggregates them into 1-minute
 /// buckets, and upserts via the `MetricsStore` trait. Also prunes DB rows
 /// older than 24 hours.
-pub(crate) async fn metrics_flush_worker<M: MetricsStore>(
+pub(crate) async fn metrics_flush_worker(
     metrics: Arc<extenddb_core::metrics::MetricsCollector>,
-    store: Arc<M>,
+    store: Arc<dyn MetricsStore>,
 ) {
     use extenddb_core::metrics::QuerySource;
     use extenddb_storage::management_store::MetricsRow;
@@ -410,7 +242,9 @@ pub(crate) async fn metrics_flush_worker<M: MetricsStore>(
 }
 
 /// Background worker that deletes old login attempt records.
-pub(crate) async fn login_attempt_cleanup_worker<R: RateLimitStore>(store: Arc<R>) {
+pub(crate) async fn login_attempt_cleanup_worker(
+    store: Arc<dyn RateLimitStore>,
+) {
     use std::time::Duration;
 
     const CLEANUP_INTERVAL: Duration = Duration::from_secs(3600);
@@ -420,65 +254,5 @@ pub(crate) async fn login_attempt_cleanup_worker<R: RateLimitStore>(store: Arc<R
     loop {
         tokio::time::sleep(CLEANUP_INTERVAL).await;
         store.cleanup_old_attempts(MAX_AGE_SECONDS).await;
-    }
-}
-
-/// P119: Poll `gsi_propagation_delay_ms` from the settings table and update
-/// the cached `AtomicU64` in `PostgresEngine`. Runs every 30 seconds.
-/// On failure, retains the last known good value and logs a debug message.
-pub(crate) async fn poll_gsi_delay<S: SettingsStore>(
-    store: Arc<S>,
-    cached: Arc<std::sync::atomic::AtomicU64>,
-) {
-    use std::time::Duration;
-
-    const POLL_INTERVAL: Duration = Duration::from_secs(30);
-
-    loop {
-        tokio::time::sleep(POLL_INTERVAL).await;
-
-        match store.get_setting("gsi_propagation_delay_ms").await {
-            Ok(Some(v)) => {
-                if let Ok(ms) = v.parse::<u64>() {
-                    cached.store(ms, std::sync::atomic::Ordering::Relaxed);
-                }
-            }
-            Ok(None) => {
-                // Setting removed — revert to default.
-                cached.store(10, std::sync::atomic::Ordering::Relaxed);
-            }
-            Err(_) => {
-                tracing::debug!("Failed to query gsi_propagation_delay_ms setting");
-            }
-        }
-    }
-}
-
-/// P120d: Sample connection pool utilization every 5 seconds and record
-/// gauge metrics for active/idle connections.
-pub(crate) async fn pool_metrics_worker(
-    catalog_pool: sqlx::PgPool,
-    data_pool: sqlx::PgPool,
-    metrics: Arc<extenddb_core::metrics::MetricsCollector>,
-) {
-    use std::time::Duration;
-
-    const SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
-
-    loop {
-        tokio::time::sleep(SAMPLE_INTERVAL).await;
-
-        let catalog_size = catalog_pool.size() as usize;
-        let catalog_idle = catalog_pool.num_idle();
-        let data_size = data_pool.size() as usize;
-        let data_idle = data_pool.num_idle();
-
-        // Combined pool stats (catalog + data).
-        let total_active =
-            (catalog_size.saturating_sub(catalog_idle)) + (data_size.saturating_sub(data_idle));
-        let total_idle = catalog_idle + data_idle;
-
-        #[allow(clippy::cast_possible_truncation)]
-        metrics.record_pool_state(total_active as u32, total_idle as u32);
     }
 }

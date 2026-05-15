@@ -9,9 +9,6 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
 use serde::{Deserialize, Serialize};
 
 use super::ManagementState;
@@ -43,10 +40,8 @@ fn op_err_to_response(e: extenddb_storage::management_store::OpError) -> Respons
 }
 
 /// GET /management/settings — list all settings (admin only).
-pub async fn list_settings<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_settings(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
 ) -> Response {
     if let Err(r) =
@@ -75,10 +70,8 @@ pub async fn list_settings<
 }
 
 /// GET /management/settings/{key} — get a single setting (admin only).
-pub async fn get_setting<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn get_setting(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(key): Path<String>,
 ) -> Response {
@@ -112,10 +105,8 @@ pub struct SetSettingRequest {
 }
 
 /// PUT /management/settings/{key} — set a setting (admin only).
-pub async fn set_setting<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn set_setting(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(key): Path<String>,
     Json(body): Json<SetSettingRequest>,

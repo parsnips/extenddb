@@ -12,7 +12,7 @@ use extenddb_core::expression::{apply_projection, parse_projection, tokenize_for
 use extenddb_core::types::{
     ItemResponse, TransactGetItemsInput, TransactGetItemsOutput, item_size_bytes,
 };
-use extenddb_storage::{DataEngine, TableEngine, TransactGetOp};
+use extenddb_storage::TransactGetOp;
 
 use crate::OperationContext;
 use crate::capacity_helpers;
@@ -32,9 +32,9 @@ const MAX_TRANSACT_GET_ITEMS: usize = 100;
 /// # Errors
 ///
 /// Returns `DynamoDbError` for validation failures, missing tables, or storage errors.
-pub async fn handle_transact_get_items<S: TableEngine + DataEngine>(
+pub async fn handle_transact_get_items(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<DispatchResult, DynamoDbError> {
     let input: TransactGetItemsInput =
         serde_json::from_value(body).map_err(crate::deserialize_error)?;

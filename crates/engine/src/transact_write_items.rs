@@ -7,14 +7,6 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
-use extenddb_core::error::DynamoDbError;
-use extenddb_core::expression::parse_update;
-use extenddb_core::types::{TransactWriteItem, TransactWriteItemsInput, TransactWriteItemsOutput};
-use extenddb_core::validation::{
-    validate_attribute_name_sizes, validate_item_size, validate_key_sizes,
-};
-use extenddb_storage::{DataEngine, TableEngine};
-
 use crate::OperationContext;
 use crate::capacity_helpers;
 use crate::create_table::storage_err_to_dynamo;
@@ -26,6 +18,12 @@ use crate::transact_write_helpers::{
     validate_no_key_updates,
 };
 use crate::{DispatchMetrics, DispatchResult};
+use extenddb_core::error::DynamoDbError;
+use extenddb_core::expression::parse_update;
+use extenddb_core::types::{TransactWriteItem, TransactWriteItemsInput, TransactWriteItemsOutput};
+use extenddb_core::validation::{
+    validate_attribute_name_sizes, validate_item_size, validate_key_sizes,
+};
 
 /// Maximum number of items in a single `TransactWriteItems` request.
 const MAX_TRANSACT_WRITE_ITEMS: usize = 100;
@@ -40,9 +38,9 @@ const MAX_TRANSACT_WRITE_ITEMS: usize = 100;
 /// Returns `TransactionCanceledException` if any condition fails.
 /// Returns `ValidationException` for input validation failures.
 /// Returns `IdempotentParameterMismatchException` for token conflicts.
-pub async fn handle_transact_write_items<S: TableEngine + DataEngine>(
+pub async fn handle_transact_write_items(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<DispatchResult, DynamoDbError> {
     let input: TransactWriteItemsInput =
         serde_json::from_value(body.clone()).map_err(crate::deserialize_error)?;
@@ -200,9 +198,9 @@ pub async fn handle_transact_write_items<S: TableEngine + DataEngine>(
 }
 
 /// Parse and validate a single `TransactWriteItem`, returning a `PreparedOp`.
-async fn prepare_write_op<S: TableEngine + DataEngine>(
+async fn prepare_write_op(
     twi: &TransactWriteItem,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<PreparedOp, DynamoDbError> {
     if let Some(put) = &twi.put {
         let key_info = ctx

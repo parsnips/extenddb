@@ -12,20 +12,14 @@ use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
 use super::{CsrfOnly, identity_label, is_admin, op_error_message, require_csrf, require_session};
 
 /// GET /console/accounts/{id}/groups/new
-pub async fn new_group_form<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn new_group_form(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
 ) -> Response {
@@ -77,10 +71,8 @@ pub struct CreateGroupForm {
     group_name: String,
 }
 
-pub async fn create_group<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn create_group(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
     Form(form): Form<CreateGroupForm>,
@@ -124,10 +116,8 @@ pub async fn create_group<
 }
 
 /// GET /console/accounts/{id}/groups/{name}
-pub async fn group_detail<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn group_detail(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
 ) -> Response {
@@ -248,10 +238,8 @@ pub async fn group_detail<
 }
 
 /// POST /console/accounts/{id}/groups/{name}/delete
-pub async fn delete_group<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_group(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
     Form(form): Form<CsrfOnly>,
@@ -298,10 +286,8 @@ pub struct AddMemberForm {
     user_name: String,
 }
 
-pub async fn add_group_member<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn add_group_member(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
     Form(form): Form<AddMemberForm>,
@@ -346,10 +332,8 @@ pub async fn add_group_member<
 }
 
 /// POST /console/accounts/{id}/groups/{name}/members/{user}/remove
-pub async fn remove_group_member<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn remove_group_member(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, group_name, user_name)): Path<(String, String, String)>,
     Form(form): Form<CsrfOnly>,

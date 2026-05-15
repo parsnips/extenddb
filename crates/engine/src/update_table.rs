@@ -5,7 +5,6 @@
 
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::types::{BillingMode, DescribeTableInput, UpdateTableInput};
-use extenddb_storage::TableEngine;
 use serde_json::Value;
 
 use crate::OperationContext;
@@ -24,9 +23,9 @@ use crate::serialize_output;
 /// Returns `ResourceNotFoundException` if the table does not exist.
 /// Returns `ResourceInUseException` if the table is not ACTIVE.
 /// Returns `InternalServerError` on storage failures.
-pub async fn handle_update_table<S: TableEngine>(
+pub async fn handle_update_table(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: UpdateTableInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 

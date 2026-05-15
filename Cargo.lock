@@ -955,6 +955,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bigdecimal",
+ "extenddb-auth",
  "extenddb-core",
  "futures",
  "inventory",

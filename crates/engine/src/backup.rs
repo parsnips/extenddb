@@ -4,16 +4,14 @@
 //! Engine handlers for DynamoDB backup and point-in-time recovery operations.
 
 use extenddb_core::error::DynamoDbError;
-use extenddb_storage::BackupEngine;
-use extenddb_storage::TableEngine;
 use serde_json::{Value, json};
 
 use crate::{OperationContext, serialize_output};
 
 /// Handle `CreateBackup`.
-pub(crate) async fn handle_create_backup<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_create_backup(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let table_name = body
         .get("TableName")
@@ -46,9 +44,9 @@ pub(crate) async fn handle_create_backup<S: TableEngine + BackupEngine + 'static
 }
 
 /// Handle `DescribeBackup`.
-pub(crate) async fn handle_describe_backup<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_describe_backup(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let backup_arn = body
         .get("BackupArn")
@@ -71,9 +69,9 @@ pub(crate) async fn handle_describe_backup<S: TableEngine + BackupEngine + 'stat
 }
 
 /// Handle `ListBackups`.
-pub(crate) async fn handle_list_backups<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_list_backups(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let table_name = body.get("TableName").and_then(|v| v.as_str());
 
@@ -87,9 +85,9 @@ pub(crate) async fn handle_list_backups<S: TableEngine + BackupEngine + 'static>
 }
 
 /// Handle `DeleteBackup`.
-pub(crate) async fn handle_delete_backup<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_delete_backup(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let backup_arn = body
         .get("BackupArn")
@@ -112,9 +110,9 @@ pub(crate) async fn handle_delete_backup<S: TableEngine + BackupEngine + 'static
 }
 
 /// Handle `RestoreTableFromBackup`.
-pub(crate) async fn handle_restore_table_from_backup<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_restore_table_from_backup(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let target_table_name = body
         .get("TargetTableName")
@@ -147,9 +145,9 @@ pub(crate) async fn handle_restore_table_from_backup<S: TableEngine + BackupEngi
 }
 
 /// Handle `DescribeContinuousBackups`.
-pub(crate) async fn handle_describe_continuous_backups<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_describe_continuous_backups(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let table_name = body
         .get("TableName")
@@ -172,9 +170,9 @@ pub(crate) async fn handle_describe_continuous_backups<S: TableEngine + BackupEn
 }
 
 /// Handle `UpdateContinuousBackups`.
-pub(crate) async fn handle_update_continuous_backups<S: TableEngine + BackupEngine + 'static>(
+pub(crate) async fn handle_update_continuous_backups(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let table_name = body
         .get("TableName")
@@ -208,11 +206,9 @@ pub(crate) async fn handle_update_continuous_backups<S: TableEngine + BackupEngi
 /// faked a restore by snapshotting the current table state (ignoring
 /// `RestoreDateTime`), which violates tenet 1 (fidelity over features).
 /// Until real PITR is implemented, return an error.
-pub(crate) async fn handle_restore_table_to_point_in_time<
-    S: TableEngine + BackupEngine + 'static,
->(
+pub(crate) async fn handle_restore_table_to_point_in_time(
     _body: Value,
-    _ctx: &OperationContext<S>,
+    _ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     // TODO(fidelity): Implement real PITR using PostgreSQL temporal/history
     // table approach — item_history table capturing every mutation, DISTINCT ON

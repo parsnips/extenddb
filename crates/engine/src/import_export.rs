@@ -10,6 +10,10 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
+use crate::OperationContext;
+use crate::create_table::storage_err_to_dynamo;
+use crate::import_export_io::{read_items, validate_path, validate_path_parent};
+use crate::serialize_output;
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::types::{
     CreateTableInput, ExportFormat, ImportStatus, ImportTableDescription, ImportTableInput,
@@ -18,12 +22,6 @@ use extenddb_core::types::{
 use extenddb_core::validation::{
     validate_attribute_name_sizes, validate_item_keys, validate_item_size, validate_key_sizes,
 };
-use extenddb_storage::{DataEngine, TableEngine};
-
-use crate::OperationContext;
-use crate::create_table::storage_err_to_dynamo;
-use crate::import_export_io::{read_items, validate_path, validate_path_parent};
-use crate::serialize_output;
 
 /// Handle an `ImportTable` request.
 ///
@@ -34,9 +32,9 @@ use crate::serialize_output;
 /// # Errors
 ///
 /// Returns `DynamoDbError` for validation failures, I/O errors, or parse errors.
-pub async fn handle_import_table<S: TableEngine + DataEngine>(
+pub async fn handle_import_table(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     // P53: Deny import if no import paths are configured (secure default).
     if ctx.import_paths.is_empty() {
@@ -165,9 +163,9 @@ pub async fn handle_import_table<S: TableEngine + DataEngine>(
 /// # Errors
 ///
 /// Returns `DynamoDbError` for validation failures, I/O errors, or storage errors.
-pub async fn handle_export_table<S: TableEngine + DataEngine>(
+pub async fn handle_export_table(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     // P53: Deny export if no export paths are configured (secure default).
     if ctx.export_paths.is_empty() {
@@ -300,8 +298,8 @@ fn create_table_input_from_params(tcp: &TableCreationParameters) -> CreateTableI
     }
 }
 
-async fn wait_for_table_active<S: TableEngine>(
-    ctx: &OperationContext<S>,
+async fn wait_for_table_active(
+    ctx: &OperationContext,
     table_name: &str,
 ) -> Result<(), DynamoDbError> {
     use extenddb_core::types::{DescribeTableInput, TableStatus};

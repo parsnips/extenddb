@@ -1,59 +1,40 @@
 // Copyright 2026 ExtendDB contributors
 // SPDX-License-Identifier: Apache-2.0
 
-//! TTL cleanup background worker.
-//!
-//! Uses an indexed sweep: only processes tables where the TTL expression index
-//! is ready. Queries use ORDER BY + LIMIT for efficient index scans.
+//! TTL cleanup background worker for PostgreSQL.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use extenddb_storage::management_store::SettingsStore;
-use extenddb_storage::{DataEngine, MetadataEngine, StreamEngine, TableEngine};
+use extenddb_core::metrics::MetricsCollector;
+use extenddb_core::types::UserIdentity;
+use extenddb_storage::error::StorageError;
+use extenddb_storage::{DataEngine, MetadataEngine, TableEngine};
 
-/// REQ-CTRL-006: Background worker that periodically scans for and deletes
-/// expired items on tables with TTL enabled.
-///
-/// Uses an indexed sweep: only processes tables where the TTL expression index
-/// is ready. Queries use ORDER BY + LIMIT for efficient index scans.
-///
-/// Deletions are routed through `DataEngine::delete_item` so that GSI/LSI
-/// index tables are kept in sync. Stream records are captured with
-/// `userIdentity` set to the `DynamoDB` service principal per AWS docs.
-///
-/// Records staleness metrics (seconds between TTL expiry and deletion).
-/// Iterates all accounts to handle multi-account deployments.
-pub(crate) async fn ttl_cleanup_worker<E, S>(
-    storage: Arc<E>,
-    region: String,
-    metrics: Arc<extenddb_core::metrics::MetricsCollector>,
-    _settings: Arc<S>,
-) where
-    E: DataEngine + MetadataEngine + TableEngine + StreamEngine + Send + Sync + 'static,
-    S: SettingsStore,
-{
-    use std::time::Duration;
+use crate::PostgresEngine;
 
-    const SCAN_INTERVAL: Duration = Duration::from_secs(60);
+const SCAN_INTERVAL: Duration = Duration::from_secs(60);
+const BATCH_SIZE: usize = 100;
 
-    let region_arc: Arc<str> = Arc::from(region.as_str());
+/// TTL cleanup worker that periodically scans for and deletes expired items.
+pub(crate) async fn ttl_cleanup_worker(
+    storage: Arc<PostgresEngine>,
+    metrics: Arc<MetricsCollector>,
+) {
+    let region_arc: Arc<str> = Arc::from(storage.region.as_str());
 
     loop {
         tokio::time::sleep(SCAN_INTERVAL).await;
-        retry_pending_indexes(&*storage).await;
-        sweep_expired_items(&*storage, &metrics, &region_arc).await;
+        retry_pending_indexes(&storage).await;
+        sweep_expired_items(&storage, &metrics, &region_arc).await;
     }
 }
 
-/// Retry index creation for tables that have TTL enabled but index not ready.
-async fn retry_pending_indexes<E>(storage: &E)
-where
-    E: DataEngine + MetadataEngine + TableEngine + StreamEngine + Send + Sync + 'static,
-{
-    let Ok(pending) = storage.all_tables_with_ttl().await else {
+async fn retry_pending_indexes(storage: &PostgresEngine) {
+    let Ok(pending) = MetadataEngine::all_tables_with_ttl(storage).await else {
         return;
     };
-    let Ok(ready) = storage.all_tables_with_ttl_index_ready().await else {
+    let Ok(ready) = MetadataEngine::all_tables_with_ttl_index_ready(storage).await else {
         return;
     };
     let ready_set: std::collections::HashSet<(&str, &str)> = ready
@@ -62,9 +43,8 @@ where
         .collect();
     for (account_id, table_name, ttl_attr) in &pending {
         if !ready_set.contains(&(account_id.as_str(), table_name.as_str())) {
-            if let Err(e) = storage
-                .create_ttl_index(account_id, table_name, ttl_attr)
-                .await
+            if let Err(e) =
+                MetadataEngine::create_ttl_index(storage, account_id, table_name, ttl_attr).await
             {
                 tracing::debug!("TTL worker: index creation retry failed for {table_name}: {e}");
             } else {
@@ -74,25 +54,17 @@ where
     }
 }
 
-/// Sweep tables with ready indexes and delete expired items.
-async fn sweep_expired_items<E>(
-    storage: &E,
-    metrics: &extenddb_core::metrics::MetricsCollector,
+async fn sweep_expired_items(
+    storage: &PostgresEngine,
+    metrics: &MetricsCollector,
     region: &Arc<str>,
-) where
-    E: DataEngine + MetadataEngine + TableEngine + StreamEngine + Send + Sync + 'static,
-{
-    use extenddb_core::types::UserIdentity;
-    use extenddb_engine::stream_capture;
-
-    const BATCH_SIZE: usize = 100;
-
+) {
     let ttl_identity = UserIdentity {
         identity_type: "Service".to_owned(),
         principal_id: "dynamodb.amazonaws.com".to_owned(),
     };
 
-    let tables = match storage.all_tables_with_ttl_index_ready().await {
+    let tables = match MetadataEngine::all_tables_with_ttl_index_ready(storage).await {
         Ok(t) => t,
         Err(e) => {
             tracing::warn!("TTL worker: failed to list tables: {e}");
@@ -106,9 +78,14 @@ async fn sweep_expired_items<E>(
         .as_secs();
 
     for (account_id, table_name, ttl_attribute) in &tables {
-        let items = match storage
-            .find_expired_items_indexed(account_id, table_name, ttl_attribute, BATCH_SIZE)
-            .await
+        let items = match MetadataEngine::find_expired_items_indexed(
+            storage,
+            account_id,
+            table_name,
+            ttl_attribute,
+            BATCH_SIZE,
+        )
+        .await
         {
             Ok(items) => items,
             Err(e) => {
@@ -121,7 +98,7 @@ async fn sweep_expired_items<E>(
             continue;
         }
 
-        let key_info = match storage.table_key_info(account_id, table_name).await {
+        let key_info = match TableEngine::table_key_info(storage, account_id, table_name).await {
             Ok(ki) => ki,
             Err(e) => {
                 tracing::warn!("TTL worker: key info failed for {table_name}: {e}");
@@ -129,16 +106,11 @@ async fn sweep_expired_items<E>(
             }
         };
 
-        let view_type = stream_capture::stream_view_type(&key_info);
-
-        // Build condition guard: attribute_exists(#ttl) AND #ttl <= :now
-        // Prevents deleting items whose TTL attribute was updated/removed by a
-        // foreground operation between the sweep read and this delete.
+        let view_type = stream_view_type(&key_info);
         let (condition_expr, maps) = build_ttl_condition(ttl_attribute, now_epoch);
 
         let mut deleted = 0usize;
         for item in &items {
-            // Compute staleness: now - item's TTL value.
             let staleness = item
                 .get(ttl_attribute.as_str())
                 .and_then(|av| {
@@ -150,7 +122,6 @@ async fn sweep_expired_items<E>(
                 })
                 .map(|ttl_val| now_epoch.saturating_sub(ttl_val));
 
-            // Extract key attributes from the full item.
             let key: extenddb_core::types::Item = key_info
                 .key_schema
                 .iter()
@@ -166,20 +137,18 @@ async fn sweep_expired_items<E>(
                 user_identity: Some(ttl_identity.clone()),
                 region: region.clone(),
             });
-            match storage
-                .delete_item(
-                    &key_info,
-                    &key,
-                    return_old,
-                    Some(&condition_expr),
-                    &maps,
-                    stream.as_ref(),
-                )
-                .await
+            match DataEngine::delete_item(
+                storage,
+                &key_info,
+                &key,
+                return_old,
+                Some(&condition_expr),
+                &maps,
+                stream.as_ref(),
+            )
+            .await
             {
-                Err(extenddb_storage::error::StorageError::ConditionFailed(_)) => {
-                    // Item was updated by a foreground op — no longer eligible.
-                }
+                Err(StorageError::ConditionFailed(_)) => {}
                 Err(e) => {
                     tracing::warn!("TTL worker: delete failed for {table_name}: {e}");
                 }
@@ -198,15 +167,20 @@ async fn sweep_expired_items<E>(
             tracing::info!("TTL worker: deleted {deleted} expired items from {table_name}");
         }
     }
-
-    // ttl_deletion_target_seconds is a documentation-only setting for operators.
-    // No runtime action needed — scan interval is fixed at 60s.
 }
 
-/// Build the TTL condition guard expression and maps.
-///
-/// Returns `attribute_exists(#ttl) AND #ttl <= :now` with the appropriate
-/// expression maps. Keys follow the internal convention (no `#`/`:` prefixes).
+fn stream_view_type(
+    key_info: &extenddb_core::types::TableKeyInfo,
+) -> Option<extenddb_core::types::StreamViewType> {
+    key_info.stream_specification.as_ref().and_then(|spec| {
+        if spec.stream_enabled {
+            spec.stream_view_type
+        } else {
+            None
+        }
+    })
+}
+
 fn build_ttl_condition(
     ttl_attribute: &str,
     now_epoch: u64,

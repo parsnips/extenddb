@@ -28,7 +28,7 @@ const WINDOW_SECONDS: i64 = 900; // 15 minutes
 /// Returns `Err(String)` when the principal is locked out, the source IP
 /// exceeds the rate limit, or a database error occurs during the check.
 pub async fn check_login_allowed(
-    store: &impl RateLimitStore,
+    store: &dyn RateLimitStore,
     principal: &str,
     source_ip: Option<&str>,
 ) -> Result<(), String> {
@@ -78,7 +78,7 @@ pub async fn check_login_allowed(
 /// unreachable. The per-principal lockout check in `check_login_allowed` already
 /// fails-closed (storage error → reject).
 pub async fn record_failed_login(
-    store: &impl RateLimitStore,
+    store: &dyn RateLimitStore,
     principal: &str,
     source_ip: Option<&str>,
 ) {

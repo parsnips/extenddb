@@ -10,10 +10,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::{CallerIdentity, authenticate};
 use super::ops::{OpError, op_err_to_response};
@@ -64,10 +60,8 @@ fn authorize_self_service(
 }
 
 /// `POST /management/accounts/{id}/users/{name}/access-keys` — create an access key.
-pub async fn create_access_key<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn create_access_key(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
@@ -98,10 +92,8 @@ pub async fn create_access_key<
 }
 
 /// `GET /management/accounts/{id}/users/{name}/access-keys` — list access keys.
-pub async fn list_access_keys<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_access_keys(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
@@ -140,10 +132,8 @@ pub async fn list_access_keys<
 }
 
 /// `DELETE /management/accounts/{id}/users/{name}/access-keys/{key_id}` — delete an access key.
-pub async fn delete_access_key<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_access_key(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name, key_id)): Path<(String, String, String)>,
 ) -> Response {
@@ -167,10 +157,8 @@ pub async fn delete_access_key<
 }
 
 /// `PUT /management/accounts/{id}/users/{name}/password` — change IAM user password.
-pub async fn change_user_password<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn change_user_password(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<ChangePasswordRequest>,
@@ -214,10 +202,8 @@ pub async fn change_user_password<
 }
 
 /// `POST /management/accounts/{id}/users/{name}/access-keys/import` — import an external access key.
-pub async fn import_access_key<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn import_access_key(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<ImportAccessKeyRequest>,

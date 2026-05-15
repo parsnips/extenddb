@@ -11,10 +11,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use serde::Deserialize;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 use crate::management::CallerIdentity;
@@ -23,11 +19,7 @@ use crate::rate_limit;
 use super::extract_session_token;
 
 /// GET /console/login — render the login form.
-pub async fn login_page<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
-) -> Html<String> {
+pub async fn login_page(State(state): State<Arc<ConsoleState>>) -> Html<String> {
     Html(login_html(None, &state.listen_url))
 }
 
@@ -38,10 +30,8 @@ pub struct LoginForm {
     password: String,
 }
 
-pub async fn login_submit<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn login_submit(
+    State(state): State<Arc<ConsoleState>>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Form(form): Form<LoginForm>,
 ) -> Response {
@@ -93,10 +83,7 @@ pub async fn login_submit<
 }
 
 /// POST /console/logout — destroy session and redirect to login.
-pub async fn logout<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static>(
-    State(state): State<Arc<ConsoleState<C>>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn logout(State(state): State<Arc<ConsoleState>>, headers: HeaderMap) -> Response {
     if let Some(token) = extract_session_token(&headers) {
         state.sessions.remove(&token).await;
     }
@@ -151,10 +138,10 @@ enum AdminLoginResult {
     NotFound,
 }
 
-async fn try_admin_login<S: extenddb_storage::management_store::AdminStore>(
+async fn try_admin_login(
     username: &str,
     password: &str,
-    store: &S,
+    store: &dyn extenddb_storage::management_store::AdminStore,
 ) -> AdminLoginResult {
     let result = match store.verify_admin_password(username, password).await {
         Ok(r) => r,
@@ -167,10 +154,10 @@ async fn try_admin_login<S: extenddb_storage::management_store::AdminStore>(
     }
 }
 
-async fn try_iam_login<S: extenddb_storage::management_store::ManagementStore>(
+async fn try_iam_login(
     username: &str,
     password: &str,
-    store: &S,
+    store: &dyn extenddb_storage::management_store::ManagementStore,
 ) -> Option<CallerIdentity> {
     let (acct_id, uname) = username.split_once('/')?;
     let ok = store

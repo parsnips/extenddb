@@ -10,10 +10,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::ops::{OpError, op_err_to_response};
@@ -51,10 +47,8 @@ pub struct TagEntry {
 }
 
 /// `POST /management/accounts/{id}/users` — create an IAM user.
-pub async fn create_user<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn create_user(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
     axum::Json(body): axum::Json<CreateUserRequest>,
@@ -107,10 +101,8 @@ pub async fn create_user<
 }
 
 /// `GET /management/accounts/{id}/users` — list IAM users in an account.
-pub async fn list_users<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_users(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
 ) -> Response {
@@ -146,10 +138,8 @@ pub async fn list_users<
 }
 
 /// `DELETE /management/accounts/{id}/users/{name}` — delete an IAM user.
-pub async fn delete_user<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_user(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
@@ -170,10 +160,8 @@ pub async fn delete_user<
 }
 
 /// `PUT /management/accounts/{id}/users/{name}/tags` — tag an IAM user.
-pub async fn tag_user<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn tag_user(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<TagRequest>,
@@ -222,10 +210,8 @@ pub async fn tag_user<
 }
 
 /// `DELETE /management/accounts/{id}/users/{name}/tags` — untag an IAM user.
-pub async fn untag_user<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn untag_user(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<UntagRequest>,
@@ -255,10 +241,8 @@ pub async fn untag_user<
 }
 
 /// `GET /management/accounts/{id}/users/{name}/tags` — list tags for an IAM user.
-pub async fn list_user_tags<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_user_tags(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {

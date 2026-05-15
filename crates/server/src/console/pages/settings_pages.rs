@@ -14,10 +14,6 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
@@ -56,12 +52,7 @@ const RUNTIME_DEFAULTS: &[(&str, &str)] = &[
 // Linear page-rendering function: auth check → build toml table → build runtime
 // table → assemble HTML. Splitting would scatter the rendering logic.
 #[allow(clippy::too_many_lines)]
-pub async fn settings_page<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn settings_page(State(state): State<Arc<ConsoleState>>, headers: HeaderMap) -> Response {
     let session = match require_session(&headers, &state).await {
         Ok(s) => s,
         Err(redirect) => return redirect,

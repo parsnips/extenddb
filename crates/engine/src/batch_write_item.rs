@@ -17,8 +17,6 @@ use extenddb_core::validation::{
     validate_attribute_name_sizes, validate_batch_item_keys, validate_batch_key_only,
     validate_item_size, validate_key_sizes,
 };
-use extenddb_storage::DataEngine;
-use extenddb_storage::TableEngine;
 
 use crate::OperationContext;
 use crate::capacity_helpers;
@@ -39,9 +37,9 @@ const MAX_BATCH_WRITE_ITEMS: usize = 25;
 /// # Errors
 ///
 /// Returns `DynamoDbError` for validation failures, missing tables, or storage errors.
-pub async fn handle_batch_write_item<S: TableEngine + DataEngine>(
+pub async fn handle_batch_write_item(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<DispatchResult, DynamoDbError> {
     let input: BatchWriteItemInput =
         serde_json::from_value(body).map_err(crate::deserialize_error)?;

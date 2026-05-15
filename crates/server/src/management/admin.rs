@@ -12,9 +12,6 @@ use serde::{Deserialize, Serialize};
 
 use super::auth::authenticate_admin;
 use super::{ManagementState, is_valid_admin_name};
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
 
 #[derive(Deserialize)]
 pub struct CreateAdminRequest {
@@ -34,10 +31,8 @@ pub struct ChangePasswordRequest {
 }
 
 /// `POST /management/admins` — create a new admin user.
-pub async fn create_admin<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn create_admin(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     axum::Json(body): axum::Json<CreateAdminRequest>,
 ) -> Response {
@@ -93,10 +88,8 @@ pub async fn create_admin<
 }
 
 /// `GET /management/admins` — list all admin users.
-pub async fn list_admins<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_admins(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
 ) -> Response {
     if let Err(e) =
@@ -127,10 +120,8 @@ pub async fn list_admins<
 }
 
 /// `DELETE /management/admins/{name}` — delete an admin user.
-pub async fn delete_admin<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_admin(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Response {
@@ -170,10 +161,8 @@ pub async fn delete_admin<
 }
 
 /// `PUT /management/admins/{name}/password` — change an admin user's password.
-pub async fn change_admin_password<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn change_admin_password(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(name): Path<String>,
     axum::Json(body): axum::Json<ChangePasswordRequest>,

@@ -3,17 +3,21 @@
 
 //! `WorkerStore` trait implementation and control plane transition processing.
 
+use futures::future::BoxFuture;
+
 use extenddb_storage::WorkerStore;
 use extenddb_storage::error::StorageError;
 
 use crate::PostgresEngine;
 
 impl WorkerStore for PostgresEngine {
-    async fn process_control_plane_transitions(
+    fn process_control_plane_transitions(
         &self,
-    ) -> Result<Vec<(String, &'static str)>, StorageError> {
-        // Delegate to the inherent method.
-        Self::process_control_plane_transitions(self).await
+    ) -> BoxFuture<'_, Result<Vec<(String, &'static str)>, StorageError>> {
+        Box::pin(async move {
+            // Delegate to the inherent method.
+            Self::process_control_plane_transitions(self).await
+        })
     }
 }
 

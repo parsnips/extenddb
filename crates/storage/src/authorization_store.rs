@@ -8,7 +8,7 @@
 //! permissions boundaries, session data, and tags needed by the policy
 //! evaluator on every `DynamoDB` request that requires authorization.
 
-use std::future::Future;
+use futures::future::BoxFuture;
 
 use super::management_store::OpResult;
 
@@ -23,35 +23,35 @@ pub trait AuthorizationStore: Send + Sync {
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<String>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<String>>>;
 
     /// Fetch all policy documents from groups the user belongs to.
     fn fetch_user_group_policies(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<String>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<String>>>;
 
     /// Fetch the permissions boundary policy document for a user, if any.
     fn fetch_user_boundary(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Option<String>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<String>>>;
 
     /// Fetch all policy documents for a role (directly attached).
     fn fetch_role_policies(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<String>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<String>>>;
 
     /// Fetch the permissions boundary policy document for a role, if any.
     fn fetch_role_boundary(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Option<String>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<String>>>;
 
     /// Fetch session data (session policy, session tags) for a role session.
     fn fetch_session_data(
@@ -59,27 +59,24 @@ pub trait AuthorizationStore: Send + Sync {
         account_id: &str,
         role_name: &str,
         session_name: &str,
-    ) -> impl Future<Output = OpResult<Option<SessionData>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<SessionData>>>;
 
     /// Fetch tags for a user (for condition key evaluation).
     fn fetch_user_tags(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     /// Fetch tags for a role (for condition key evaluation in role sessions).
     fn fetch_role_tags(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     /// Fetch tags for a resource ARN (for condition key evaluation).
-    fn fetch_resource_tags(
-        &self,
-        arn: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    fn fetch_resource_tags(&self, arn: &str) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 }
 
 /// Session data returned by [`AuthorizationStore::fetch_session_data`].

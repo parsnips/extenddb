@@ -10,10 +10,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::ops::op_err_to_response;
@@ -41,10 +37,8 @@ struct AccountEntry {
 }
 
 /// `POST /management/accounts` — create a new account.
-pub async fn create_account<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn create_account(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     axum::Json(body): axum::Json<CreateAccountRequest>,
 ) -> Response {
@@ -88,10 +82,8 @@ pub async fn create_account<
 }
 
 /// `GET /management/accounts` — list all accounts.
-pub async fn list_accounts<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_accounts(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
 ) -> Response {
     if let Err(e) =
@@ -122,10 +114,8 @@ pub async fn list_accounts<
 }
 
 /// `DELETE /management/accounts/{id}` — delete an account.
-pub async fn delete_account<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_account(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {

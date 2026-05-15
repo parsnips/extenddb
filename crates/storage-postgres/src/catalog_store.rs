@@ -12,6 +12,7 @@
 use std::sync::Arc;
 
 use extenddb_storage::management_store::{MetricsRow, OpError, OpResult};
+use futures::future::BoxFuture;
 use sqlx::PgPool;
 
 /// PostgreSQL-backed catalog store for settings, metrics, and rate limiting.
@@ -191,120 +192,129 @@ impl extenddb_storage::diagnostics::DiagnosticsStore for PostgresCatalogStore {
 // ── MetricsStore ───────────────────────────────────────────────────────
 
 impl extenddb_storage::management_store::MetricsStore for PostgresCatalogStore {
-    async fn insert_metrics(&self, rows: &[MetricsRow]) -> OpResult<()> {
-        for row in rows {
-            let result = sqlx::query(
-                "INSERT INTO metrics \
-                 (bucket, metric, table_name, index_name, operation, sum, count, min, max) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
-                 ON CONFLICT (bucket, metric, table_name, index_name, operation) \
-                 DO UPDATE SET sum = metrics.sum + EXCLUDED.sum, \
-                               count = metrics.count + EXCLUDED.count, \
-                               min = LEAST(metrics.min, EXCLUDED.min), \
-                               max = GREATEST(metrics.max, EXCLUDED.max)",
-            )
-            .bind(row.bucket)
-            .bind(&row.metric)
-            .bind(row.table_name.as_deref().unwrap_or(""))
-            .bind(row.index_name.as_deref().unwrap_or(""))
-            .bind(row.operation.as_deref().unwrap_or(""))
-            .bind(row.sum)
-            .bind(row.count)
-            .bind(row.min)
-            .bind(row.max)
-            .execute(&self.pool)
-            .await;
-            if let Err(e) = result {
-                tracing::warn!("Failed to upsert metrics row: {e}");
+    fn insert_metrics(&self, rows: &[MetricsRow]) -> BoxFuture<'_, OpResult<()>> {
+        let rows = rows.to_vec();
+        Box::pin(async move {
+            for row in &rows {
+                let result = sqlx::query(
+                    "INSERT INTO metrics \
+                     (bucket, metric, table_name, index_name, operation, sum, count, min, max) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+                     ON CONFLICT (bucket, metric, table_name, index_name, operation) \
+                     DO UPDATE SET sum = metrics.sum + EXCLUDED.sum, \
+                                   count = metrics.count + EXCLUDED.count, \
+                                   min = LEAST(metrics.min, EXCLUDED.min), \
+                                   max = GREATEST(metrics.max, EXCLUDED.max)",
+                )
+                .bind(row.bucket)
+                .bind(&row.metric)
+                .bind(row.table_name.as_deref().unwrap_or(""))
+                .bind(row.index_name.as_deref().unwrap_or(""))
+                .bind(row.operation.as_deref().unwrap_or(""))
+                .bind(row.sum)
+                .bind(row.count)
+                .bind(row.min)
+                .bind(row.max)
+                .execute(&self.pool)
+                .await;
+                if let Err(e) = result {
+                    tracing::warn!("Failed to upsert metrics row: {e}");
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
-    async fn query_metrics(
+    fn query_metrics(
         &self,
         start: time::OffsetDateTime,
         end: time::OffsetDateTime,
         table_name: Option<&str>,
         metric: Option<&str>,
-    ) -> OpResult<Vec<MetricsRow>> {
-        use std::fmt::Write as _;
+    ) -> BoxFuture<'_, OpResult<Vec<MetricsRow>>> {
+        let table_name = table_name.map(|s| s.to_owned());
+        let metric = metric.map(|s| s.to_owned());
+        Box::pin(async move {
+            use std::fmt::Write as _;
 
-        let mut sql = String::from(
-            "SELECT bucket, metric, table_name, index_name, operation, \
-             sum, count, min, max \
-             FROM metrics WHERE bucket >= $1 AND bucket <= $2",
-        );
-        let mut param_idx = 3u32;
+            let mut sql = String::from(
+                "SELECT bucket, metric, table_name, index_name, operation, \
+                 sum, count, min, max \
+                 FROM metrics WHERE bucket >= $1 AND bucket <= $2",
+            );
+            let mut param_idx = 3u32;
 
-        let table_filter = table_name.filter(|s| !s.is_empty());
-        if table_filter.is_some() {
-            let _ = write!(sql, " AND table_name = ${param_idx}");
-            param_idx += 1;
-        }
-        if metric.is_some() {
-            let _ = write!(sql, " AND metric = ${param_idx}");
-        }
-        let _ = param_idx;
-        sql.push_str(" ORDER BY bucket");
+            let table_filter = table_name.as_deref().filter(|s| !s.is_empty());
+            if table_filter.is_some() {
+                let _ = write!(sql, " AND table_name = ${param_idx}");
+                param_idx += 1;
+            }
+            if metric.is_some() {
+                let _ = write!(sql, " AND metric = ${param_idx}");
+            }
+            let _ = param_idx;
+            sql.push_str(" ORDER BY bucket");
 
-        // Build the query with dynamic binds.
-        let mut query = sqlx::query_as::<_, DbMetricsRow>(&sql)
-            .bind(start)
-            .bind(end);
-        if let Some(tn) = table_filter {
-            query = query.bind(tn);
-        }
-        if let Some(mn) = metric {
-            query = query.bind(mn);
-        }
+            // Build the query with dynamic binds.
+            let mut query = sqlx::query_as::<_, DbMetricsRow>(&sql)
+                .bind(start)
+                .bind(end);
+            if let Some(tn) = table_filter {
+                query = query.bind(tn);
+            }
+            if let Some(mn) = metric.as_deref() {
+                query = query.bind(mn);
+            }
 
-        let rows = query.fetch_all(&self.pool).await.map_err(|e| {
-            tracing::warn!("query_metrics: {e}");
-            OpError::Internal("Database error".to_owned())
-        })?;
-
-        Ok(rows
-            .into_iter()
-            .map(|r| MetricsRow {
-                bucket: r.bucket,
-                metric: r.metric,
-                table_name: if r.table_name.is_empty() {
-                    None
-                } else {
-                    Some(r.table_name)
-                },
-                index_name: if r.index_name.is_empty() {
-                    None
-                } else {
-                    Some(r.index_name)
-                },
-                operation: if r.operation.is_empty() {
-                    None
-                } else {
-                    Some(r.operation)
-                },
-                sum: r.sum,
-                count: r.count,
-                min: r.min,
-                max: r.max,
-            })
-            .collect())
-    }
-
-    async fn prune_metrics(&self, retention: std::time::Duration) -> OpResult<()> {
-        #[allow(clippy::cast_possible_wrap)] // retention seconds fit in i64
-        let cutoff =
-            time::OffsetDateTime::now_utc() - time::Duration::seconds(retention.as_secs() as i64);
-        sqlx::query("DELETE FROM metrics WHERE bucket < $1")
-            .bind(cutoff)
-            .execute(&self.pool)
-            .await
-            .map_err(|e| {
-                tracing::warn!("prune_metrics: {e}");
+            let rows = query.fetch_all(&self.pool).await.map_err(|e| {
+                tracing::warn!("query_metrics: {e}");
                 OpError::Internal("Database error".to_owned())
             })?;
-        Ok(())
+
+            Ok(rows
+                .into_iter()
+                .map(|r| MetricsRow {
+                    bucket: r.bucket,
+                    metric: r.metric,
+                    table_name: if r.table_name.is_empty() {
+                        None
+                    } else {
+                        Some(r.table_name)
+                    },
+                    index_name: if r.index_name.is_empty() {
+                        None
+                    } else {
+                        Some(r.index_name)
+                    },
+                    operation: if r.operation.is_empty() {
+                        None
+                    } else {
+                        Some(r.operation)
+                    },
+                    sum: r.sum,
+                    count: r.count,
+                    min: r.min,
+                    max: r.max,
+                })
+                .collect())
+        })
+    }
+
+    fn prune_metrics(&self, retention: std::time::Duration) -> BoxFuture<'_, OpResult<()>> {
+        Box::pin(async move {
+            #[allow(clippy::cast_possible_wrap)] // retention seconds fit in i64
+            let cutoff = time::OffsetDateTime::now_utc()
+                - time::Duration::seconds(retention.as_secs() as i64);
+            sqlx::query("DELETE FROM metrics WHERE bucket < $1")
+                .bind(cutoff)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| {
+                    tracing::warn!("prune_metrics: {e}");
+                    OpError::Internal("Database error".to_owned())
+                })?;
+            Ok(())
+        })
     }
 }
 
@@ -325,71 +335,97 @@ struct DbMetricsRow {
 // ── RateLimitStore ─────────────────────────────────────────────────────
 
 impl extenddb_storage::management_store::RateLimitStore for PostgresCatalogStore {
-    async fn count_principal_failures(
+    fn count_principal_failures(
         &self,
         principal: &str,
         window_seconds: i64,
-    ) -> OpResult<i64> {
-        let row: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM login_attempts \
-             WHERE principal = $1 AND success = false \
-             AND attempted_at > NOW() - make_interval(secs => $2)",
-        )
-        .bind(principal)
-        .bind(window_seconds)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("count_principal_failures: {e}");
-            OpError::Internal("Database error".to_owned())
-        })?;
-        Ok(row.0)
+    ) -> BoxFuture<'_, OpResult<i64>> {
+        let principal = principal.to_owned();
+        Box::pin(async move {
+            let row: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM login_attempts \
+                 WHERE principal = $1 AND success = false \
+                 AND attempted_at > NOW() - make_interval(secs => $2)",
+            )
+            .bind(&principal)
+            .bind(window_seconds)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("count_principal_failures: {e}");
+                OpError::Internal("Database error".to_owned())
+            })?;
+            Ok(row.0)
+        })
     }
 
-    async fn count_ip_failures(&self, source_ip: &str, window_seconds: i64) -> OpResult<i64> {
-        let row: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM login_attempts \
-             WHERE source_ip = $1 AND success = false \
-             AND attempted_at > NOW() - make_interval(secs => $2)",
-        )
-        .bind(source_ip)
-        .bind(window_seconds)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| {
-            tracing::error!("count_ip_failures: {e}");
-            OpError::Internal("Database error".to_owned())
-        })?;
-        Ok(row.0)
+    fn count_ip_failures(
+        &self,
+        source_ip: &str,
+        window_seconds: i64,
+    ) -> BoxFuture<'_, OpResult<i64>> {
+        let source_ip = source_ip.to_owned();
+        Box::pin(async move {
+            let row: (i64,) = sqlx::query_as(
+                "SELECT COUNT(*) FROM login_attempts \
+                 WHERE source_ip = $1 AND success = false \
+                 AND attempted_at > NOW() - make_interval(secs => $2)",
+            )
+            .bind(&source_ip)
+            .bind(window_seconds)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("count_ip_failures: {e}");
+                OpError::Internal("Database error".to_owned())
+            })?;
+            Ok(row.0)
+        })
     }
 
-    async fn record_failed_login(&self, principal: &str, source_ip: Option<&str>) {
-        let result = sqlx::query(
-            "INSERT INTO login_attempts (principal, success, source_ip) VALUES ($1, false, $2)",
-        )
-        .bind(principal)
-        .bind(source_ip)
-        .execute(&self.pool)
-        .await;
-        if let Err(e) = result {
-            tracing::error!("Failed to record login attempt: {e}");
-        }
-    }
-
-    async fn cleanup_old_attempts(&self, max_age_seconds: i64) {
-        let result = sqlx::query(
-            "DELETE FROM login_attempts WHERE attempted_at < NOW() - make_interval(secs => $1)",
-        )
-        .bind(max_age_seconds)
-        .execute(&self.pool)
-        .await;
-        match result {
-            Ok(r) => {
-                if r.rows_affected() > 0 {
-                    tracing::debug!("Cleaned up {} old login attempt records", r.rows_affected());
-                }
+    fn record_failed_login(&self, principal: &str, source_ip: Option<&str>) -> BoxFuture<'_, ()> {
+        let principal = principal.to_owned();
+        let source_ip = source_ip.map(|s| s.to_owned());
+        Box::pin(async move {
+            let result = sqlx::query(
+                "INSERT INTO login_attempts (principal, success, source_ip) VALUES ($1, false, $2)",
+            )
+            .bind(&principal)
+            .bind(source_ip.as_deref())
+            .execute(&self.pool)
+            .await;
+            if let Err(e) = result {
+                tracing::error!("Failed to record login attempt: {e}");
             }
-            Err(e) => tracing::error!("Login attempt cleanup failed: {e}"),
-        }
+        })
+    }
+
+    fn cleanup_old_attempts(&self, max_age_seconds: i64) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let result = sqlx::query(
+                "DELETE FROM login_attempts WHERE attempted_at < NOW() - make_interval(secs => $1)",
+            )
+            .bind(max_age_seconds)
+            .execute(&self.pool)
+            .await;
+            match result {
+                Ok(r) => {
+                    if r.rows_affected() > 0 {
+                        tracing::debug!(
+                            "Cleaned up {} old login attempt records",
+                            r.rows_affected()
+                        );
+                    }
+                }
+                Err(e) => tracing::error!("Login attempt cleanup failed: {e}"),
+            }
+        })
+    }
+}
+
+// Implement CatalogStore supertrait
+impl extenddb_storage::CatalogStore for PostgresCatalogStore {
+    fn cached_encryption_key(&self) -> Option<String> {
+        self.encryption_key.as_ref().map(|arc| arc.to_string())
     }
 }

@@ -6,7 +6,7 @@
 //! Validation logic lives here in the server layer. The actual database
 //! write is delegated to the `SettingsStore` trait implementation.
 
-use extenddb_storage::management_store::{OpError, OpResult, SettingsStore};
+use extenddb_storage::management_store::{OpError, OpResult};
 
 /// Validator function for a setting value.
 pub type Validator = fn(&str) -> Result<(), &'static str>;
@@ -68,7 +68,11 @@ fn validate_gsi_delay_ms(value: &str) -> Result<(), &'static str> {
 ///
 /// Returns `OpError::Validation` if the key is read-only, unknown, or the value
 /// fails validation. Returns `OpError::Internal` on database errors.
-pub async fn set_setting(store: &impl SettingsStore, key: &str, value: &str) -> OpResult<()> {
+pub async fn set_setting(
+    store: &dyn extenddb_storage::management_store::SettingsStore,
+    key: &str,
+    value: &str,
+) -> OpResult<()> {
     if READONLY_KEYS.contains(&key) {
         return Err(OpError::Validation(format!("Setting '{key}' is read-only")));
     }

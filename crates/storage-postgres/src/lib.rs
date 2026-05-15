@@ -27,8 +27,10 @@ mod pg_util;
 mod stream_engine;
 mod table_engine;
 mod table_helpers;
+mod ttl_worker;
 mod update_table;
 mod worker_store;
+mod workers;
 
 pub use bootstrapper::PostgresBootstrapper;
 pub use catalog_store::PostgresCatalogStore;
@@ -296,5 +298,189 @@ impl PostgresEngine {
     /// that operate on `_ddb_*` tables (e.g., TTL cleanup, table size refresh).
     pub fn data_pool(&self) -> &PgPool {
         &self.data_pool
+    }
+}
+
+// ============================================================================
+// ServerComponents Factory Registration
+// ============================================================================
+
+use extenddb_auth::BuiltinAuthProvider;
+use extenddb_storage::hooks::{ServerRuntimeHooks, WorkerContext};
+use extenddb_storage::server_components::{
+    BackendError, ServerComponents, ServerComponentsRegistration,
+};
+
+/// Backend-specific runtime hooks for PostgreSQL.
+struct PostgresRuntimeHooks {
+    engine: Arc<PostgresEngine>,
+    control_plane_notify: Arc<tokio::sync::Notify>,
+    gsi_default_delay_ms: Arc<std::sync::atomic::AtomicU64>,
+    data_db_name: String,
+}
+
+#[async_trait::async_trait]
+impl ServerRuntimeHooks for PostgresRuntimeHooks {
+    async fn spawn_workers(&self, ctx: &WorkerContext) {
+        // Backend-specific workers that need PostgreSQL internals
+
+        // 1. Control plane transitions poller
+        let storage_for_poller = self.engine.clone();
+        let cp_notify = self.control_plane_notify.clone();
+        let catalog_store = ctx.catalog_store.clone();
+        tokio::spawn(async move {
+            workers::poll_control_plane_transitions(storage_for_poller, cp_notify, catalog_store)
+                .await
+        });
+
+        // 2. Table size refresh worker
+        let storage_for_size = self.engine.clone();
+        tokio::spawn(async move { workers::table_size_refresh_worker(storage_for_size).await });
+
+        // 3. Stream record cleanup worker
+        let storage_for_stream = self.engine.clone();
+        let metrics = ctx.metrics.clone();
+        tokio::spawn(async move {
+            workers::stream_record_cleanup_worker(storage_for_stream, metrics).await
+        });
+
+        // 4. Idempotency token cleanup worker
+        let storage_for_token = self.engine.clone();
+        let metrics = ctx.metrics.clone();
+        tokio::spawn(async move {
+            workers::idempotency_token_cleanup_worker(storage_for_token, metrics).await
+        });
+
+        // 5. TTL cleanup worker
+        let storage_for_ttl = self.engine.clone();
+        let metrics = ctx.metrics.clone();
+        tokio::spawn(async move { ttl_worker::ttl_cleanup_worker(storage_for_ttl, metrics).await });
+
+        // 6. Pool metrics worker - needs both catalog and data pools
+        let catalog_pool = self.engine.pool.clone();
+        let data_pool = self.engine.data_pool().clone();
+        let metrics = ctx.metrics.clone();
+        tokio::spawn(async move {
+            workers::pool_metrics_worker(catalog_pool, data_pool, metrics).await
+        });
+
+        // 7. GSI delay poller
+        let catalog_store_for_gsi = ctx.catalog_store.clone();
+        let gsi_delay = self.gsi_default_delay_ms.clone();
+        tokio::spawn(
+            async move { workers::poll_gsi_delay(catalog_store_for_gsi, gsi_delay).await },
+        );
+    }
+
+    fn backend_info(&self) -> Option<String> {
+        Some(format!("data_db={}", self.data_db_name))
+    }
+}
+
+// Register the PostgreSQL backend factory
+inventory::submit! {
+    ServerComponentsRegistration {
+        backend: "postgres",
+        factory: |config, region| {
+            let connection_string = config.connection_config().to_string();
+            let max_connections = config.max_connections();
+            let region = region.to_string();
+            Box::pin(async move {
+                // Build PostgresConfig from extracted values
+                let pg_config = PostgresConfig {
+                    connection_string: connection_string.clone(),
+                    pool_size: max_connections,
+                    max_item_size_bytes: 400_000,
+                };
+
+                // Create PostgresEngine
+                let engine = PostgresEngine::new(&pg_config, &region)
+                    .await
+                    .map_err(|e| BackendError::ConnectionFailed {
+                        backend: "postgres".to_string(),
+                        details: e.to_string(),
+                    })?;
+
+                // Check catalog version
+                engine.check_catalog_version().await.map_err(|e| match e {
+                    StorageError::CatalogVersionMismatch { expected, found } => {
+                        BackendError::CatalogVersionMismatch { expected, found }
+                    }
+                    _ => BackendError::InitializationFailed(e.to_string()),
+                })?;
+
+                // Recover control plane transitions (ignore errors)
+                match engine.process_control_plane_transitions().await {
+                    Ok(ref t) if t.is_empty() => {}
+                    Ok(transitions) => {
+                        for (name, transition) in &transitions {
+                            tracing::info!("Recovered table '{name}': {transition}");
+                        }
+                    }
+                    Err(e) => tracing::error!("Failed to recover control plane transitions: {e}"),
+                }
+
+                // Start GSI workers
+                let engine = engine.start_gsi_workers();
+
+                // Get data database name for logging (before wrapping in Arc)
+                let data_db_name = engine
+                    .get_data_database_info()
+                    .await
+                    .unwrap_or_else(|_| "(query failed)".to_owned());
+
+                // Get references to fields we need before wrapping
+                let control_plane_notify = engine.control_plane_notify.clone();
+                let gsi_default_delay_ms = engine.gsi_default_delay_ms.clone();
+
+                // Wrap engine in Arc
+                let engine = Arc::new(engine);
+
+                // Create catalog store
+                let catalog_pool_size = max_connections.min(10);
+                let catalog_pool = PgPoolOptions::new()
+                    .max_connections(catalog_pool_size)
+                    .min_connections(catalog_pool_size.min(2))
+                    .connect(&connection_string)
+                    .await
+                    .map_err(|e| BackendError::ConnectionFailed {
+                        backend: "postgres".to_string(),
+                        details: format!("Failed to create catalog pool: {e}"),
+                    })?;
+
+                // Load encryption key
+                let enc_key: Option<String> =
+                    sqlx::query_scalar("SELECT value FROM settings WHERE key = 'encryption_key'")
+                        .fetch_optional(&catalog_pool)
+                        .await
+                        .map_err(|e| BackendError::InitializationFailed(format!("Failed to fetch encryption key: {e}")))?;
+
+                let catalog_store = Arc::new(match enc_key {
+                    Some(k) => PostgresCatalogStore::with_encryption_key(catalog_pool.clone(), k),
+                    None => return Err(BackendError::MissingEncryptionKey),
+                }) as Arc<dyn extenddb_storage::CatalogStore>;
+
+                // Create auth provider
+                let enc_key = extenddb_storage::CatalogStore::cached_encryption_key(&*catalog_store)
+                    .ok_or(BackendError::MissingEncryptionKey)?;
+                let cred_store = DbCredentialStore::new(catalog_pool.clone(), enc_key);
+                let auth_provider = Arc::new(BuiltinAuthProvider::new(cred_store));
+
+                // Create runtime hooks
+                let runtime_hooks = Box::new(PostgresRuntimeHooks {
+                    engine: engine.clone(),
+                    control_plane_notify,
+                    gsi_default_delay_ms,
+                    data_db_name,
+                });
+
+                Ok(ServerComponents {
+                    engine,
+                    catalog_store,
+                    auth_provider,
+                    runtime_hooks: Some(runtime_hooks),
+                })
+            })
+        },
     }
 }

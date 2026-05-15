@@ -7,8 +7,6 @@ use extenddb_core::error::DynamoDbError;
 use extenddb_core::types::{
     ListTagsOfResourceInput, ListTagsOfResourceOutput, TagResourceInput, UntagResourceInput,
 };
-use extenddb_storage::MetadataEngine;
-use extenddb_storage::TableEngine;
 use serde_json::Value;
 
 use crate::OperationContext;
@@ -33,10 +31,7 @@ fn extract_account_from_arn(arn: &str) -> Option<&str> {
 /// Validate that the ARN refers to an existing table.
 ///
 /// Returns `ResourceNotFoundException` if the table does not exist.
-async fn validate_resource_arn<S: TableEngine>(
-    arn: &str,
-    ctx: &OperationContext<S>,
-) -> Result<(), DynamoDbError> {
+async fn validate_resource_arn(arn: &str, ctx: &OperationContext) -> Result<(), DynamoDbError> {
     let table_name = extract_table_name_from_arn(arn).ok_or_else(|| {
         DynamoDbError::ValidationException(format!(
             "1 validation error detected: Value '{arn}' at 'resourceArn' failed to satisfy constraint: \
@@ -76,9 +71,9 @@ async fn validate_resource_arn<S: TableEngine>(
 /// Returns `ResourceNotFoundException` if the resource does not exist.
 /// Returns `ValidationException` if the resource ARN is empty.
 /// Returns `InternalServerError` on storage failures.
-pub async fn handle_tag_resource<S: TableEngine + MetadataEngine>(
+pub async fn handle_tag_resource(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: TagResourceInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 
@@ -106,9 +101,9 @@ pub async fn handle_tag_resource<S: TableEngine + MetadataEngine>(
 /// Returns `ResourceNotFoundException` if the resource does not exist.
 /// Returns `ValidationException` if the resource ARN is empty.
 /// Returns `InternalServerError` on storage failures.
-pub async fn handle_untag_resource<S: TableEngine + MetadataEngine>(
+pub async fn handle_untag_resource(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: UntagResourceInput =
         serde_json::from_value(body).map_err(crate::deserialize_error)?;
@@ -137,9 +132,9 @@ pub async fn handle_untag_resource<S: TableEngine + MetadataEngine>(
 /// Returns `ResourceNotFoundException` if the resource does not exist.
 /// Returns `ValidationException` if the resource ARN is empty.
 /// Returns `InternalServerError` on storage failures.
-pub async fn handle_list_tags_of_resource<S: TableEngine + MetadataEngine>(
+pub async fn handle_list_tags_of_resource(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: ListTagsOfResourceInput =
         serde_json::from_value(body).map_err(crate::deserialize_error)?;

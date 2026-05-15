@@ -31,32 +31,20 @@ use extenddb_auth::AuthProvider;
 use extenddb_core::limits::LimitsConfig;
 use extenddb_core::metrics::MetricsCollector;
 use extenddb_core::throttle::ThrottleManager;
-use extenddb_storage::DataEngine;
-use extenddb_storage::MetadataEngine;
-use extenddb_storage::StreamEngine;
-use extenddb_storage::TableEngine;
 use serde_json::json;
 use tower::ServiceBuilder;
 use tower_http::set_header::SetResponseHeaderLayer;
 
-use extenddb_storage::authorization_store::AuthorizationStore;
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, MetricsStore, RateLimitStore, SettingsStore,
-};
-
 /// Application state shared across all handlers.
-pub struct AppState<
-    S: TableEngine + DataEngine + MetadataEngine + StreamEngine + extenddb_storage::BackupEngine,
-    C,
-> {
-    pub storage: Arc<S>,
+pub struct AppState {
+    pub storage: Arc<dyn extenddb_storage::StorageEngine>,
     pub auth: Arc<dyn AuthProvider>,
     pub limits: Arc<LimitsConfig>,
     // Fix #9: Use Arc<str> to avoid per-request cloning
     pub region: Arc<str>,
     pub server_addr: String,
     /// Catalog store implementing operational storage traits.
-    pub catalog_store: Option<Arc<C>>,
+    pub catalog_store: Option<Arc<dyn extenddb_storage::CatalogStore>>,
     /// Version string for the web console footer.
     pub version_info: Arc<str>,
     /// In-memory metrics collector for `DynamoDB` `CloudWatch`-style metrics.
@@ -96,23 +84,9 @@ pub struct ServerTlsConfig {
 ///
 /// When `tls` is `Some`, the server serves HTTPS using `axum-server` with rustls.
 /// When `tls` is `None`, the server serves plaintext HTTP.
-pub async fn start_server<
-    S: TableEngine
-        + DataEngine
-        + MetadataEngine
-        + StreamEngine
-        + extenddb_storage::BackupEngine
-        + 'static,
-    C: SettingsStore
-        + MetricsStore
-        + RateLimitStore
-        + AdminStore
-        + ManagementStore
-        + AuthorizationStore
-        + 'static,
->(
+pub async fn start_server(
     listener: tokio::net::TcpListener,
-    state: AppState<S, C>,
+    state: AppState,
     pid_file: Option<PathBuf>,
     tls: Option<ServerTlsConfig>,
 ) -> Result<(), anyhow::Error> {
@@ -147,10 +121,10 @@ pub async fn start_server<
         ));
 
     let mut app = Router::new()
-        .route("/", post(handler::handle_request::<S, C>))
+        .route("/", post(handler::handle_request))
         .layer(DefaultBodyLimit::max(DYNAMODB_BODY_LIMIT))
         .route("/health", get(health_check))
-        .route("/metrics", get(metrics_endpoint::metrics_endpoint::<S, C>))
+        .route("/metrics", get(metrics_endpoint::metrics_endpoint))
         // S-6: Explicit small body limit for non-DynamoDB endpoints.
         .layer(DefaultBodyLimit::max(1024))
         .with_state(shared);

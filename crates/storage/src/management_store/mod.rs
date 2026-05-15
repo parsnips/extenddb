@@ -29,8 +29,6 @@ pub use types::{
     RoleDetail, UserDetail,
 };
 
-use std::future::Future;
-
 use futures::future::BoxFuture;
 
 // ── Settings store ─────────────────────────────────────────────────────
@@ -58,7 +56,7 @@ pub trait SettingsStore: Send + Sync {
 /// Historical metrics persistence and query.
 pub trait MetricsStore: Send + Sync {
     /// Insert a batch of metrics rows (periodic flush from in-memory collector).
-    fn insert_metrics(&self, rows: &[MetricsRow]) -> impl Future<Output = OpResult<()>> + Send;
+    fn insert_metrics(&self, rows: &[MetricsRow]) -> BoxFuture<'_, OpResult<()>>;
 
     /// Query metrics rows within a time range, with optional filters.
     fn query_metrics(
@@ -67,13 +65,10 @@ pub trait MetricsStore: Send + Sync {
         end: time::OffsetDateTime,
         table_name: Option<&str>,
         metric: Option<&str>,
-    ) -> impl Future<Output = OpResult<Vec<MetricsRow>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<MetricsRow>>>;
 
     /// Delete metrics rows older than the retention period.
-    fn prune_metrics(
-        &self,
-        retention: std::time::Duration,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn prune_metrics(&self, retention: std::time::Duration) -> BoxFuture<'_, OpResult<()>>;
 }
 
 // ── Rate limit store ───────────────────────────────────────────────────
@@ -85,24 +80,20 @@ pub trait RateLimitStore: Send + Sync {
         &self,
         principal: &str,
         window_seconds: i64,
-    ) -> impl Future<Output = OpResult<i64>> + Send;
+    ) -> BoxFuture<'_, OpResult<i64>>;
 
     /// Count failed login attempts from a source IP within the lookback window.
     fn count_ip_failures(
         &self,
         source_ip: &str,
         window_seconds: i64,
-    ) -> impl Future<Output = OpResult<i64>> + Send;
+    ) -> BoxFuture<'_, OpResult<i64>>;
 
     /// Record a failed login attempt.
-    fn record_failed_login(
-        &self,
-        principal: &str,
-        source_ip: Option<&str>,
-    ) -> impl Future<Output = ()> + Send;
+    fn record_failed_login(&self, principal: &str, source_ip: Option<&str>) -> BoxFuture<'_, ()>;
 
     /// Delete login attempt records older than `max_age_seconds`.
-    fn cleanup_old_attempts(&self, max_age_seconds: i64) -> impl Future<Output = ()> + Send;
+    fn cleanup_old_attempts(&self, max_age_seconds: i64) -> BoxFuture<'_, ()>;
 }
 
 // ── Admin store ────────────────────────────────────────────────────────
@@ -110,24 +101,20 @@ pub trait RateLimitStore: Send + Sync {
 /// Admin user management (separate from IAM users).
 pub trait AdminStore: Send + Sync {
     /// Create an admin user with a pre-hashed password.
-    fn create_admin(
-        &self,
-        admin_name: &str,
-        password_hash: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn create_admin(&self, admin_name: &str, password_hash: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List all admin users.
-    fn list_admins(&self) -> impl Future<Output = OpResult<Vec<AdminEntry>>> + Send;
+    fn list_admins(&self) -> BoxFuture<'_, OpResult<Vec<AdminEntry>>>;
 
     /// Delete an admin user. Returns `NotFound` if the admin does not exist.
-    fn delete_admin(&self, admin_name: &str) -> impl Future<Output = OpResult<()>> + Send;
+    fn delete_admin(&self, admin_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// Update an admin user's password hash. Returns `NotFound` if not found.
     fn change_admin_password(
         &self,
         admin_name: &str,
         password_hash: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// Verify an admin password. Returns `None` if the admin does not exist,
     /// `Some(true)` if the password matches, `Some(false)` if it does not.
@@ -135,7 +122,7 @@ pub trait AdminStore: Send + Sync {
         &self,
         admin_name: &str,
         password: &str,
-    ) -> impl Future<Output = OpResult<Option<bool>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<bool>>>;
 }
 
 // ── Management store (IAM) ─────────────────────────────────────────────
@@ -148,36 +135,30 @@ pub trait AdminStore: Send + Sync {
 pub trait ManagementStore: Send + Sync {
     // ── Accounts ───────────────────────────────────────────────────
 
-    fn create_account(
-        &self,
-        account_id: &str,
-        account_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn create_account(&self, account_id: &str, account_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// Delete an account. Must fail with `HasDependents` if the account owns tables.
-    fn delete_account(&self, account_id: &str) -> impl Future<Output = OpResult<()>> + Send;
+    fn delete_account(&self, account_id: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List all accounts as `(account_id, account_name)`.
-    fn list_all_accounts(&self) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    fn list_all_accounts(&self) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     /// List all accounts with created_at as `(account_id, account_name, created_at)`.
     fn list_all_accounts_full(
         &self,
-    ) -> impl Future<Output = OpResult<Vec<(String, String, time::OffsetDateTime)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String, time::OffsetDateTime)>>>;
 
     /// List accounts visible to a specific account.
-    fn list_accounts_for(
-        &self,
-        account_id: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    fn list_accounts_for(&self, account_id: &str)
+    -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     fn get_account_detail(
         &self,
         account_id: &str,
-    ) -> impl Future<Output = OpResult<Option<AccountDetail>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<AccountDetail>>>;
 
     /// Dashboard counts: `(account_count, admin_count)`.
-    fn dashboard_counts(&self) -> impl Future<Output = OpResult<(i64, i64)>> + Send;
+    fn dashboard_counts(&self) -> BoxFuture<'_, OpResult<(i64, i64)>>;
 
     // ── Users ──────────────────────────────────────────────────────
 
@@ -186,25 +167,21 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         user_name: &str,
         password_hash: Option<&str>,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
-    fn delete_user(
-        &self,
-        account_id: &str,
-        user_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn delete_user(&self, account_id: &str, user_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List users in an account as `(account_id, user_name, user_arn, has_password, created_at)`.
     fn list_users(
         &self,
         account_id: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String, String, bool, time::OffsetDateTime)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String, String, bool, time::OffsetDateTime)>>>;
 
     fn get_user_detail(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Option<UserDetail>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<UserDetail>>>;
 
     /// Verify an IAM user's console password.
     fn verify_iam_user_password(
@@ -212,7 +189,7 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         user_name: &str,
         password: &str,
-    ) -> impl Future<Output = OpResult<bool>> + Send;
+    ) -> BoxFuture<'_, OpResult<bool>>;
 
     /// Change an IAM user's console password (pre-hashed).
     fn change_user_password(
@@ -220,7 +197,7 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         user_name: &str,
         password_hash: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     // ── User tags ──────────────────────────────────────────────────
 
@@ -230,7 +207,7 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         user_name: &str,
         tags: &[(String, String)],
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// Remove tags from a user by key.
     fn untag_user(
@@ -238,54 +215,46 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         user_name: &str,
         tag_keys: &[String],
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// List tags for a user as `(tag_key, tag_value)`.
     fn list_user_tags(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     // ── Groups ─────────────────────────────────────────────────────
 
-    fn create_group(
-        &self,
-        account_id: &str,
-        group_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn create_group(&self, account_id: &str, group_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
-    fn delete_group(
-        &self,
-        account_id: &str,
-        group_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn delete_group(&self, account_id: &str, group_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List groups in an account as `(account_id, group_name, group_arn, created_at)`.
     fn list_groups(
         &self,
         account_id: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String, String, time::OffsetDateTime)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String, String, time::OffsetDateTime)>>>;
 
     fn get_group_detail(
         &self,
         account_id: &str,
         group_name: &str,
-    ) -> impl Future<Output = OpResult<Option<GroupDetail>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<GroupDetail>>>;
 
     fn add_group_member(
         &self,
         account_id: &str,
         group_name: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     fn remove_group_member(
         &self,
         account_id: &str,
         group_name: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     // ── Roles ──────────────────────────────────────────────────────
 
@@ -294,20 +263,17 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         role_name: &str,
         trust_policy: &serde_json::Value,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
-    fn delete_role(
-        &self,
-        account_id: &str,
-        role_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    fn delete_role(&self, account_id: &str, role_name: &str) -> BoxFuture<'_, OpResult<()>>;
 
     /// List roles in an account as `(account_id, role_name, role_arn, trust_policy, created_at)`.
     fn list_roles(
         &self,
         account_id: &str,
-    ) -> impl Future<
-        Output = OpResult<
+    ) -> BoxFuture<
+        '_,
+        OpResult<
             Vec<(
                 String,
                 String,
@@ -316,20 +282,20 @@ pub trait ManagementStore: Send + Sync {
                 time::OffsetDateTime,
             )>,
         >,
-    > + Send;
+    >;
 
     fn get_role_detail(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Option<RoleDetail>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<RoleDetail>>>;
 
     /// Fetch a role's trust policy. Returns `None` if the role does not exist.
     fn get_role_trust_policy(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Option<serde_json::Value>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<serde_json::Value>>>;
 
     // ── Role tags ──────────────────────────────────────────────────
 
@@ -339,7 +305,7 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         role_name: &str,
         tags: &[(String, String)],
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// Remove tags from a role by key.
     fn untag_role(
@@ -347,14 +313,14 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         role_name: &str,
         tag_keys: &[String],
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// List tags for a role as `(tag_key, tag_value)`.
     fn list_role_tags(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 
     // ── Policies ───────────────────────────────────────────────────
 
@@ -366,7 +332,7 @@ pub trait ManagementStore: Send + Sync {
         principal_name: &str,
         policy_name: &str,
         document: &serde_json::Value,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     fn delete_policy(
         &self,
@@ -374,7 +340,7 @@ pub trait ManagementStore: Send + Sync {
         principal_type: &str,
         principal_name: &str,
         policy_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// List policies for a principal as `(policy_name, policy_document, created_at)`.
     fn list_policies(
@@ -382,7 +348,7 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         principal_type: &str,
         principal_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, serde_json::Value, time::OffsetDateTime)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, serde_json::Value, time::OffsetDateTime)>>>;
 
     // ── Permissions boundaries ─────────────────────────────────────
 
@@ -392,21 +358,21 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         user_name: &str,
         document: &serde_json::Value,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// Get the permissions boundary for a user. Returns `None` if not set.
     fn get_user_boundary(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Option<serde_json::Value>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<serde_json::Value>>>;
 
     /// Delete the permissions boundary for a user.
     fn delete_user_boundary(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// Set (upsert) a permissions boundary on a role.
     fn set_role_boundary(
@@ -414,21 +380,21 @@ pub trait ManagementStore: Send + Sync {
         account_id: &str,
         role_name: &str,
         document: &serde_json::Value,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// Get the permissions boundary for a role. Returns `None` if not set.
     fn get_role_boundary(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<Option<serde_json::Value>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Option<serde_json::Value>>>;
 
     /// Delete the permissions boundary for a role.
     fn delete_role_boundary(
         &self,
         account_id: &str,
         role_name: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     // ── Access keys ────────────────────────────────────────────────
 
@@ -438,21 +404,21 @@ pub trait ManagementStore: Send + Sync {
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<AccessKeyCreated>> + Send;
+    ) -> BoxFuture<'_, OpResult<AccessKeyCreated>>;
 
     fn delete_access_key(
         &self,
         account_id: &str,
         user_name: &str,
         key_id: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     /// List access keys for a user as `(access_key_id, is_active, created_at)`.
     fn list_access_keys(
         &self,
         account_id: &str,
         user_name: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, bool, time::OffsetDateTime)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, bool, time::OffsetDateTime)>>>;
 
     /// Import an externally-generated access key. The implementation handles
     /// encryption internally using the stored encryption key.
@@ -462,7 +428,7 @@ pub trait ManagementStore: Send + Sync {
         user_name: &str,
         access_key_id: &str,
         secret_access_key: &str,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     // ── Sessions (`AssumeRole`) ────────────────────────────────────
 
@@ -479,7 +445,7 @@ pub trait ManagementStore: Send + Sync {
         session_tags: &Option<serde_json::Value>,
         session_policy: &Option<serde_json::Value>,
         expires_at: time::OffsetDateTime,
-    ) -> impl Future<Output = OpResult<()>> + Send;
+    ) -> BoxFuture<'_, OpResult<()>>;
 
     // ── Caller tags (for trust policy evaluation) ──────────────────
 
@@ -489,5 +455,5 @@ pub trait ManagementStore: Send + Sync {
         &self,
         account_id: &str,
         resource: &str,
-    ) -> impl Future<Output = OpResult<Vec<(String, String)>>> + Send;
+    ) -> BoxFuture<'_, OpResult<Vec<(String, String)>>>;
 }

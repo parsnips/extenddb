@@ -12,8 +12,6 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use extenddb_storage::management_store::MetricsStore;
-use extenddb_storage::{DataEngine, MetadataEngine, StreamEngine, TableEngine};
 use serde_json::json;
 
 use crate::AppState;
@@ -22,16 +20,8 @@ use crate::AppState;
 ///
 /// S-1: `MetricsCollector::query()` holds `std::sync::RwLock` and iterates the
 /// full map, so we run it on a blocking thread to avoid stalling the async runtime.
-pub(crate) async fn metrics_endpoint<
-    S: TableEngine
-        + DataEngine
-        + MetadataEngine
-        + StreamEngine
-        + extenddb_storage::BackupEngine
-        + 'static,
-    C: MetricsStore + Send + Sync + 'static,
->(
-    State(state): State<Arc<AppState<S, C>>>,
+pub(crate) async fn metrics_endpoint(
+    State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<extenddb_core::metrics::MetricsQuery>,
 ) -> impl IntoResponse {
     use extenddb_core::metrics::MetricsResponse;
@@ -98,8 +88,8 @@ pub(crate) async fn metrics_endpoint<
 ///
 /// Aggregates rows into time-series buckets at the requested granularity
 /// and also produces aggregate `MetricSnapshot`s for backward compatibility.
-async fn query_metrics_from_store<C: MetricsStore>(
-    store: &C,
+async fn query_metrics_from_store(
+    store: &dyn extenddb_storage::management_store::MetricsStore,
     params: &extenddb_core::metrics::MetricsQuery,
 ) -> Result<extenddb_core::metrics::MetricsResponse, String> {
     use extenddb_core::metrics::{

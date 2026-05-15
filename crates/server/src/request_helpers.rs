@@ -5,7 +5,6 @@
 
 use axum::http::HeaderMap;
 use extenddb_core::error::DynamoDbError;
-use extenddb_storage::{DataEngine, MetadataEngine, StreamEngine, TableEngine};
 use serde_json::Value;
 
 use crate::AppState;
@@ -52,17 +51,9 @@ pub(crate) fn extract_table_name(input: &Value) -> Option<String> {
 /// Returns the pre-fetched `TableKeyInfo` for single-table item-level operations
 /// (P118 optimization #2). The caller passes this into `OperationContext` to
 /// avoid a redundant catalog roundtrip in the engine layer.
-pub(crate) async fn authorize_request<
-    S: TableEngine
-        + DataEngine
-        + MetadataEngine
-        + StreamEngine
-        + extenddb_storage::BackupEngine
-        + 'static,
-    C: extenddb_storage::authorization_store::AuthorizationStore + Send + Sync + 'static,
->(
-    state: &AppState<S, C>,
-    store: &C,
+pub(crate) async fn authorize_request(
+    state: &AppState,
+    store: &dyn extenddb_storage::authorization_store::AuthorizationStore,
     identity: &extenddb_auth::AuthIdentity,
     input: &Value,
     operation: &str,

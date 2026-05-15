@@ -10,10 +10,6 @@ use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
@@ -22,10 +18,8 @@ use super::{CsrfOnly, identity_label, op_error_message, require_csrf, require_se
 use crate::management::CallerIdentity;
 
 /// POST /console/accounts/{id}/users/{name}/access-keys/new
-pub async fn create_access_key<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn create_access_key(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
     Form(form): Form<CsrfOnly>,
@@ -113,10 +107,8 @@ Save the secret key now. It cannot be retrieved later.
 }
 
 /// POST /console/accounts/{id}/users/{name}/access-keys/{key_id}/delete
-pub async fn delete_access_key<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_access_key(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path((account_id, user_name, key_id)): Path<(String, String, String)>,
     Form(form): Form<CsrfOnly>,

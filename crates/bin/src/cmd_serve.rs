@@ -8,11 +8,7 @@ use std::sync::Arc;
 
 use clap::Args;
 use daemonize::Daemonize;
-use extenddb_auth::BuiltinAuthProvider;
 use extenddb_server::AppState;
-use extenddb_storage::management_store::SettingsStore;
-use extenddb_storage_postgres::DbCredentialStore;
-use extenddb_storage_postgres::{PostgresCatalogStore, PostgresConfig, PostgresEngine};
 use syslog_tracing::{Facility, Options, Syslog};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, reload, util::SubscriberInitExt};
 
@@ -68,6 +64,20 @@ pub fn run(args: &ServeArgs) -> anyhow::Result<()> {
         anyhow::bail!(
             "Unknown auth provider '{}'. Only 'builtin' is supported.",
             app_config.auth.provider
+        );
+    }
+
+    // Check backend is supported by this build
+    let backend = &app_config.storage._backend;
+    #[cfg(not(feature = "postgres"))]
+    if backend == "postgres" {
+        anyhow::bail!("PostgreSQL backend not enabled. Rebuild with --features postgres");
+    }
+    #[cfg(feature = "postgres")]
+    if backend != "postgres" {
+        anyhow::bail!(
+            "Unknown backend '{}'. This build only supports 'postgres'.",
+            backend
         );
     }
 
@@ -232,30 +242,23 @@ async fn serve_inner(
             .map_err(|e| anyhow::anyhow!("Failed to initialize tracing: {e}"))?;
     }
 
-    let pg_config = PostgresConfig {
-        connection_string: app_config.storage.connection_config().to_string(),
-        pool_size: app_config.storage.max_connections(),
-        max_item_size_bytes: app_config.limits.max_item_size_bytes,
-    };
-    let storage = PostgresEngine::new(&pg_config, &app_config.server.region).await?;
-    // REQ-CAT-010: Server startup is read-only against the catalog schema.
-    storage.check_catalog_version().await?;
+    // Create server components via factory pattern
+    let components = extenddb_storage::create_server_components(
+        &backend,
+        app_config.storage.as_trait(),
+        &app_config.server.region,
+    )
+    .await?;
 
-    // H-5: Recover any in-flight control plane operations from a previous instance.
-    match storage.process_control_plane_transitions().await {
-        Ok(ref t) if t.is_empty() => {}
-        Ok(transitions) => {
-            for (name, transition) in &transitions {
-                tracing::info!("Recovered table '{name}': {transition}");
-            }
-        }
-        Err(e) => tracing::error!("Failed to recover control plane transitions: {e}"),
-    }
+    let storage = components.engine;
+    let catalog_store = components.catalog_store;
+    let auth = components.auth_provider;
+    let runtime_hooks = components.runtime_hooks;
 
-    let data_db_info = storage
-        .get_data_database_info()
-        .await
-        .unwrap_or_else(|_| "(query failed)".to_owned());
+    let data_db_info = runtime_hooks
+        .as_ref()
+        .and_then(|h| h.backend_info())
+        .unwrap_or_else(|| "(unknown)".to_owned());
 
     // REQ-LOG-001: Startup banner with effective configuration.
     // REQ-LOG-002: Connection strings redact passwords.
@@ -275,79 +278,8 @@ async fn serve_inner(
     // Convert pre-bound std listener to tokio (D-4: bind before fork).
     let listener = tokio::net::TcpListener::from_std(std_listener)?;
 
-    let storage = Arc::new(storage.start_gsi_workers());
-
     // P120e: Create metrics collector early so workers can record health.
     let metrics = Arc::new(extenddb_core::metrics::MetricsCollector::new());
-
-    // H-5: Spawn background task to process control plane transitions.
-    // F-3: Event-driven — the poller blocks on a Notify and wakes
-    // immediately when CreateTable or DeleteTable commits.
-    let cp_notify = storage.control_plane_notify();
-    let storage_for_poller = Arc::clone(&storage);
-    // REQ-CTRL-006: Spawn TTL cleanup background worker.
-    // (Deferred until metrics and catalog_store are available — see below.)
-
-    // REQ-CTRL-004: Spawn table size/item count refresh background worker.
-    let storage_for_size = Arc::clone(&storage);
-    tokio::spawn(workers::table_size_refresh_worker(storage_for_size));
-
-    // Spawn stream record cleanup background worker (24h retention).
-    let storage_for_streams = Arc::clone(&storage);
-    tokio::spawn(workers::stream_record_cleanup_worker(
-        storage_for_streams,
-        metrics.clone(),
-    ));
-    // Spawn idempotency token cleanup background worker (10 min expiry).
-    let storage_for_tokens = Arc::clone(&storage);
-    tokio::spawn(workers::idempotency_token_cleanup_worker(
-        storage_for_tokens,
-        metrics.clone(),
-    ));
-    // Phase 11a: Spawn background task to warn about approximate consumed capacity.
-    tokio::spawn(workers::capacity_warning_worker());
-
-    // Management API: create pool for admin/account CRUD and authz queries.
-    let catalog_pool_size = app_config.storage.max_catalog_connections();
-    let catalog_pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(catalog_pool_size)
-        .min_connections(catalog_pool_size.min(2))
-        .connect(app_config.storage.connection_config())
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create management API pool: {e}"))?;
-
-    let catalog_store = Arc::new({
-        // P119: Load encryption key once at startup and cache it.
-        let enc_key: Option<String> =
-            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'encryption_key'")
-                .fetch_optional(&catalog_pool)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch encryption key: {e}"))?;
-        match enc_key {
-            Some(k) => PostgresCatalogStore::with_encryption_key(catalog_pool.clone(), k),
-            None => PostgresCatalogStore::new(catalog_pool.clone()),
-        }
-    });
-
-    // H-5: Spawn control plane poller now that catalog_pool is available.
-    tokio::spawn(workers::poll_control_plane_transitions(
-        storage_for_poller,
-        cp_notify,
-        catalog_store.clone(),
-    ));
-
-    // REQ-AUTH-001: Build the builtin auth provider.
-    // The early D6 check guarantees provider == "builtin" at this point.
-    // P119: Reuse the cached encryption key from catalog_store.
-    let auth: Arc<dyn extenddb_auth::AuthProvider> = {
-        let enc_key: String = catalog_store.cached_encryption_key().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Encryption key not found in settings table. Run `extenddb init` first."
-            )
-        })?;
-        let cred_store = DbCredentialStore::new(catalog_pool.clone(), enc_key);
-        Arc::new(BuiltinAuthProvider::new(cred_store))
-    };
 
     let tls_enabled = app_config.server.tls.enabled;
 
@@ -480,7 +412,7 @@ async fn serve_inner(
     // D-22: Spawn background task to poll log_level from settings table.
     tokio::spawn(workers::poll_log_level(
         catalog_store.clone(),
-        reload_handle,
+        reload_handle.clone(),
         app_config.logging.level.clone(),
     ));
     // Poll throttling_enabled runtime setting.
@@ -489,34 +421,28 @@ async fn serve_inner(
         throttle,
         config_throttling,
     ));
-    // P119: Poll gsi_propagation_delay_ms and update the cached AtomicU64.
-    tokio::spawn(workers::poll_gsi_delay(
-        catalog_store.clone(),
-        Arc::clone(&state.storage.gsi_default_delay_ms),
-    ));
     // Spawn background tasks for metrics pruning and flushing.
     tokio::spawn(workers::metrics_prune_worker(metrics.clone()));
     tokio::spawn(workers::metrics_flush_worker(
         metrics.clone(),
         catalog_store.clone(),
     ));
-    // P120d: Spawn pool metrics sampler (every 5s).
-    tokio::spawn(workers::pool_metrics_worker(
-        catalog_store.pool().clone(),
-        state.storage.data_pool().clone(),
-        metrics.clone(),
-    ));
-    // REQ-CTRL-006: Spawn TTL cleanup background worker (needs metrics + settings).
-    let storage_for_ttl = Arc::clone(&state.storage);
-    let region_for_ttl = state.region.to_string();
-    tokio::spawn(crate::ttl_worker::ttl_cleanup_worker(
-        storage_for_ttl,
-        region_for_ttl,
-        metrics,
-        catalog_store.clone(),
-    ));
     // Spawn background task to clean up old login attempt records.
-    tokio::spawn(workers::login_attempt_cleanup_worker(catalog_store));
+    tokio::spawn(workers::login_attempt_cleanup_worker(catalog_store.clone()));
+    // Phase 11a: Spawn background task to warn about approximate consumed capacity.
+    tokio::spawn(workers::capacity_warning_worker());
+
+    // Spawn backend-specific workers via runtime hooks
+    if let Some(hooks) = runtime_hooks {
+        let worker_ctx = extenddb_storage::WorkerContext {
+            metrics: metrics.clone(),
+            catalog_store: catalog_store.clone(),
+            reload_handle: reload_handle.clone(),
+            config_log_level: app_config.logging.level.clone(),
+        };
+        hooks.spawn_workers(&worker_ctx).await;
+    }
+
     let tls_config = if tls_enabled {
         let cert_path = crate::config::expand_tilde(&app_config.server.tls.cert_path);
         let key_path = crate::config::expand_tilde(&app_config.server.tls.key_path);

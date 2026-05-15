@@ -11,10 +11,6 @@ use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use serde_json::Value;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::is_valid_iam_name;
@@ -27,10 +23,8 @@ struct PolicyEntry {
     created_at: String,
 }
 
-pub async fn put_user_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn put_user_policy(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name, policy_name)): Path<(String, String, String)>,
     axum::Json(document): axum::Json<Value>,
@@ -47,20 +41,16 @@ pub async fn put_user_policy<
     .await
 }
 
-pub async fn list_user_policies<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_user_policies(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name)): Path<(String, String)>,
 ) -> Response {
     list_policies(&state, &headers, &account_id, "user", &user_name).await
 }
 
-pub async fn delete_user_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_user_policy(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, user_name, policy_name)): Path<(String, String, String)>,
 ) -> Response {
@@ -75,10 +65,8 @@ pub async fn delete_user_policy<
     .await
 }
 
-pub async fn put_group_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn put_group_policy(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, group_name, policy_name)): Path<(String, String, String)>,
     axum::Json(document): axum::Json<Value>,
@@ -95,20 +83,16 @@ pub async fn put_group_policy<
     .await
 }
 
-pub async fn list_group_policies<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_group_policies(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
 ) -> Response {
     list_policies(&state, &headers, &account_id, "group", &group_name).await
 }
 
-pub async fn delete_group_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_group_policy(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, group_name, policy_name)): Path<(String, String, String)>,
 ) -> Response {
@@ -123,10 +107,8 @@ pub async fn delete_group_policy<
     .await
 }
 
-pub async fn put_role_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn put_role_policy(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name, policy_name)): Path<(String, String, String)>,
     axum::Json(document): axum::Json<Value>,
@@ -143,20 +125,16 @@ pub async fn put_role_policy<
     .await
 }
 
-pub async fn list_role_policies<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_role_policies(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name)): Path<(String, String)>,
 ) -> Response {
     list_policies(&state, &headers, &account_id, "role", &role_name).await
 }
 
-pub async fn delete_role_policy<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_role_policy(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, role_name, policy_name)): Path<(String, String, String)>,
 ) -> Response {
@@ -175,8 +153,8 @@ pub async fn delete_role_policy<
 // Shared implementation
 // ---------------------------------------------------------------------------
 
-async fn put_policy<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &ManagementState<C>,
+async fn put_policy(
+    state: &ManagementState,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,
@@ -230,8 +208,8 @@ async fn put_policy<C: SettingsStore + RateLimitStore + AdminStore + ManagementS
     }
 }
 
-async fn list_policies<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &ManagementState<C>,
+async fn list_policies(
+    state: &ManagementState,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,
@@ -268,8 +246,8 @@ async fn list_policies<C: SettingsStore + RateLimitStore + AdminStore + Manageme
     }
 }
 
-async fn delete_policy<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    state: &ManagementState<C>,
+async fn delete_policy(
+    state: &ManagementState,
     headers: &HeaderMap,
     account_id: &str,
     principal_type: &str,

@@ -12,22 +12,13 @@ use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
 use super::{CsrfOnly, identity_label, is_admin, op_error_message, require_csrf, require_session};
 
 /// GET /console/ — dashboard showing account count and quick links.
-pub async fn dashboard<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn dashboard(State(state): State<Arc<ConsoleState>>, headers: HeaderMap) -> Response {
     let session = match require_session(&headers, &state).await {
         Ok(s) => s,
         Err(r) => return r,
@@ -67,12 +58,7 @@ pub async fn dashboard<
 }
 
 /// GET /console/accounts — list all accounts.
-pub async fn list_accounts<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn list_accounts(State(state): State<Arc<ConsoleState>>, headers: HeaderMap) -> Response {
     let session = match require_session(&headers, &state).await {
         Ok(s) => s,
         Err(r) => return r,
@@ -124,10 +110,8 @@ pub async fn list_accounts<
 }
 
 /// GET /console/accounts/new — form to create an account.
-pub async fn new_account_form<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn new_account_form(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
 ) -> Response {
     let session = match require_session(&headers, &state).await {
@@ -180,10 +164,8 @@ pub struct CreateAccountForm {
     account_name: String,
 }
 
-pub async fn create_account<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn create_account(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Form(form): Form<CreateAccountForm>,
 ) -> Response {
@@ -258,10 +240,8 @@ pub async fn create_account<
 }
 
 /// GET /console/accounts/{id} — account detail with users, groups, roles.
-pub async fn account_detail<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn account_detail(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
 ) -> Response {
@@ -378,10 +358,8 @@ pub async fn account_detail<
 }
 
 /// POST /console/accounts/{id}/delete — delete an account.
-pub async fn delete_account<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn delete_account(
+    State(state): State<Arc<ConsoleState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
     Form(form): Form<CsrfOnly>,

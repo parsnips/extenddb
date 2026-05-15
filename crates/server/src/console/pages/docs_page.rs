@@ -14,10 +14,6 @@ use axum::extract::{Path, State};
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 
@@ -25,9 +21,7 @@ use crate::console::html;
 const NAV: &str = r#"<nav><span class="brand">extenddb Console</span><span class="spacer"></span><a href="/console/docs">Docs</a> <a href="/console/login">Login</a></nav>"#;
 
 /// GET /console/docs — render the documentation index grouped by category.
-pub async fn docs_page<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    State(state): State<Arc<ConsoleState<C>>>,
-) -> Response {
+pub async fn docs_page(State(state): State<Arc<ConsoleState>>) -> Response {
     let Some(ref store) = state.docs_store else {
         return Html(html::layout_full(
             "Documentation",
@@ -83,8 +77,8 @@ pub async fn docs_page<C: SettingsStore + RateLimitStore + AdminStore + Manageme
 }
 
 /// GET /console/docs/{slug} — render a single document in the console layout.
-pub async fn docs_view<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn docs_view(
+    State(state): State<Arc<ConsoleState>>,
     Path(slug): Path<String>,
 ) -> Response {
     let Some(ref store) = state.docs_store else {
@@ -111,8 +105,8 @@ pub async fn docs_view<C: SettingsStore + RateLimitStore + AdminStore + Manageme
 }
 
 /// GET /console/docs/{slug}/pdf — serve the PDF from disk.
-pub async fn docs_pdf<C: SettingsStore + RateLimitStore + AdminStore + ManagementStore>(
-    State(state): State<Arc<ConsoleState<C>>>,
+pub async fn docs_pdf(
+    State(state): State<Arc<ConsoleState>>,
     Path(slug): Path<String>,
 ) -> Response {
     let Some(ref store) = state.docs_store else {

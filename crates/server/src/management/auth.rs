@@ -10,7 +10,6 @@
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
-use extenddb_storage::management_store::{AdminStore, ManagementStore, RateLimitStore};
 
 /// Maximum allowed length for the Authorization header (8 KB).
 const MAX_AUTH_HEADER_LEN: usize = 8 * 1024;
@@ -37,10 +36,10 @@ pub enum CallerIdentity {
 ///
 /// Returns the caller identity on success, or an error response on failure.
 /// Enforces per-principal lockout and per-IP rate limiting via the storage backend.
-pub async fn authenticate<S: AdminStore + ManagementStore>(
+pub async fn authenticate(
     headers: &HeaderMap,
-    store: &S,
-    rate_limiter: &impl RateLimitStore,
+    store: &dyn extenddb_storage::CatalogStore,
+    rate_limiter: &dyn extenddb_storage::management_store::RateLimitStore,
     source_ip: Option<&str>,
 ) -> Result<CallerIdentity, Response> {
     let header = headers
@@ -144,10 +143,10 @@ pub async fn authenticate<S: AdminStore + ManagementStore>(
 }
 
 /// Authenticate as admin only. Returns error if caller is not an admin.
-pub async fn authenticate_admin<S: AdminStore + ManagementStore>(
+pub async fn authenticate_admin(
     headers: &HeaderMap,
-    store: &S,
-    rate_limiter: &impl RateLimitStore,
+    store: &dyn extenddb_storage::CatalogStore,
+    rate_limiter: &dyn extenddb_storage::management_store::RateLimitStore,
     source_ip: Option<&str>,
 ) -> Result<String, Response> {
     match authenticate(headers, store, rate_limiter, source_ip).await? {
@@ -158,10 +157,10 @@ pub async fn authenticate_admin<S: AdminStore + ManagementStore>(
     }
 }
 
-async fn try_admin_auth<S: AdminStore>(
+async fn try_admin_auth(
     username: &str,
     password: &str,
-    store: &S,
+    store: &dyn extenddb_storage::CatalogStore,
 ) -> Result<Option<CallerIdentity>, Response> {
     let result = store
         .verify_admin_password(username, password)
@@ -187,10 +186,10 @@ async fn try_admin_auth<S: AdminStore>(
 }
 
 #[allow(clippy::similar_names)]
-async fn try_iam_user_auth<S: ManagementStore>(
+async fn try_iam_user_auth(
     username: &str,
     password: &str,
-    store: &S,
+    store: &dyn extenddb_storage::CatalogStore,
 ) -> Result<Option<CallerIdentity>, Response> {
     let Some((acct_id, uname)) = username.split_once('/') else {
         return Ok(None);

@@ -13,11 +13,6 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use extenddb_core::error::DynamoDbError;
 use extenddb_engine::OperationContext;
-use extenddb_storage::DataEngine;
-use extenddb_storage::MetadataEngine;
-use extenddb_storage::StreamEngine;
-use extenddb_storage::TableEngine;
-use extenddb_storage::authorization_store::AuthorizationStore;
 use serde_json::Value;
 
 use crate::AppState;
@@ -34,16 +29,8 @@ use crate::throttle_helpers::{
 /// SP-WIRE-007: Reject bodies exceeding 16 MB with `RequestEntityTooLargeException`.
 #[allow(clippy::too_many_lines)] // sequential request pipeline — splitting would obscure the flow
 #[allow(clippy::similar_names)] // auth_start/authz_start and auth_us/authz_us are intentionally parallel
-pub(crate) async fn handle_request<
-    S: TableEngine
-        + DataEngine
-        + MetadataEngine
-        + StreamEngine
-        + extenddb_storage::BackupEngine
-        + 'static,
-    C: AuthorizationStore + Send + Sync + 'static,
->(
-    State(state): State<Arc<AppState<S, C>>>,
+pub(crate) async fn handle_request(
+    State(state): State<Arc<AppState>>,
     uri: axum::http::Uri,
     mut headers: HeaderMap,
     body: Result<Bytes, axum::extract::rejection::BytesRejection>,

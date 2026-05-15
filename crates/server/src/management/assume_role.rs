@@ -15,10 +15,6 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::crypto::{
@@ -65,10 +61,8 @@ struct AssumeRoleResponse {
 /// Authenticates via Basic auth (admin only). The caller ARN is provided in
 /// the request body. Trust policy evaluates against the provided caller ARN.
 /// Returns ASIA* temporary credentials.
-pub async fn assume_role<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn assume_role(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Path((account_id, role_name)): Path<(String, String)>,
@@ -178,29 +172,30 @@ pub async fn assume_role<
 }
 
 /// Generate ASIA* credentials, encrypt, store session, and return the response.
-async fn generate_and_store_session<S: ManagementStore + SettingsStore>(
-    store: &S,
+async fn generate_and_store_session(
+    store: &dyn extenddb_storage::CatalogStore,
     account_id: &str,
     role_name: &str,
     request: &AssumeRoleRequest,
     caller_arn: &str,
 ) -> Response {
     // P119: Use cached encryption key if available, fall back to DB query.
-    let enc_key_b64: String = if let Some(k) = store.cached_encryption_key() {
-        k
-    } else {
-        match store.get_setting("encryption_key").await {
-            Ok(Some(k)) => k,
-            Ok(None) => {
-                tracing::error!("Management API: encryption key not found in settings");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    let enc_key_b64: String =
+        if let Some(k) = extenddb_storage::CatalogStore::cached_encryption_key(store) {
+            k
+        } else {
+            match store.get_setting("encryption_key").await {
+                Ok(Some(k)) => k,
+                Ok(None) => {
+                    tracing::error!("Management API: encryption key not found in settings");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+                Err(e) => {
+                    tracing::error!("Management API: fetch encryption key failed: {e:?}");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
             }
-            Err(e) => {
-                tracing::error!("Management API: fetch encryption key failed: {e:?}");
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-        }
-    };
+        };
 
     // Generate ASIA* temporary credentials.
     let access_key_id = generate_session_key_id();
@@ -274,11 +269,11 @@ async fn generate_and_store_session<S: ManagementStore + SettingsStore>(
 ///
 /// Conditions are evaluated using the policy engine's `AssumeRoleContext`,
 /// which supports `aws:PrincipalTag/*` and `sts:ExternalId` keys.
-async fn evaluate_trust_policy<S: ManagementStore>(
+async fn evaluate_trust_policy(
     trust_policy: &Value,
     caller_arn: &str,
     external_id: Option<&str>,
-    store: &S,
+    store: &dyn extenddb_storage::CatalogStore,
 ) -> bool {
     let Some(statements) = trust_policy.get("Statement").and_then(|s| s.as_array()) else {
         return false;
@@ -346,9 +341,9 @@ fn principal_matches(principal: &Value, caller_arn: &str) -> bool {
 /// Parses the caller ARN to determine if it's a user or role, then fetches
 /// the appropriate tags. Returns an empty map if the ARN format is unrecognized
 /// or the query fails.
-async fn fetch_caller_tags<S: ManagementStore>(
+async fn fetch_caller_tags(
     caller_arn: &str,
-    store: &S,
+    store: &dyn extenddb_storage::CatalogStore,
 ) -> std::collections::HashMap<String, String> {
     let parts: Vec<&str> = caller_arn.splitn(6, ':').collect();
     if parts.len() < 6 {

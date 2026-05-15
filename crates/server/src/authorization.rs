@@ -23,8 +23,8 @@ use extenddb_storage::authorization_store::AuthorizationStore;
 /// For `AuthIdentity::User` and `AuthIdentity::RoleSession`, the full IAM
 /// evaluation algorithm runs: explicit deny → permissions boundary → session
 /// policy → identity allow → implicit deny.
-pub async fn check_authorization<C: AuthorizationStore>(
-    store: &C,
+pub async fn check_authorization(
+    store: &dyn AuthorizationStore,
     identity: &AuthIdentity,
     operation: &str,
     resource_arn: &str,
@@ -67,8 +67,8 @@ pub async fn check_authorization<C: AuthorizationStore>(
     }
 }
 
-async fn check_user_authorization<C: AuthorizationStore>(
-    store: &C,
+async fn check_user_authorization(
+    store: &dyn AuthorizationStore,
     account_id: &str,
     user_name: &str,
     operation: &str,
@@ -120,8 +120,8 @@ async fn check_user_authorization<C: AuthorizationStore>(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn check_role_authorization<C: AuthorizationStore>(
-    store: &C,
+async fn check_role_authorization(
+    store: &dyn AuthorizationStore,
     account_id: &str,
     role_name: &str,
     session_name: &str,
@@ -240,8 +240,8 @@ async fn fetch_tags(
 }
 
 /// Fetch resource tags, returning empty map for wildcard ARNs.
-async fn fetch_resource_tags<C: AuthorizationStore>(
-    store: &C,
+async fn fetch_resource_tags(
+    store: &dyn AuthorizationStore,
     resource_arn: &str,
 ) -> Result<HashMap<String, String>, DynamoDbError> {
     // Wildcard ARNs (e.g. table/*) have no specific resource to tag.
@@ -252,8 +252,8 @@ async fn fetch_resource_tags<C: AuthorizationStore>(
 }
 
 /// Fetch session data and merge role tags with session tags (session wins on conflict).
-async fn fetch_session_data_and_tags<C: AuthorizationStore>(
-    store: &C,
+async fn fetch_session_data_and_tags(
+    store: &dyn AuthorizationStore,
     account_id: &str,
     role_name: &str,
     session_name: &str,

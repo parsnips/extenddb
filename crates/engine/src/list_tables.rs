@@ -5,15 +5,14 @@ use serde_json::Value;
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::types::ListTablesInput;
 use extenddb_core::validation::validate_table_name_chars;
-use extenddb_storage::TableEngine;
 
 use crate::OperationContext;
 use crate::create_table::storage_err_to_dynamo;
 use crate::serialize_output;
 
-pub async fn handle_list_tables<S: TableEngine>(
+pub async fn handle_list_tables(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: ListTablesInput = serde_json::from_value(body).map_err(crate::deserialize_error)?;
 

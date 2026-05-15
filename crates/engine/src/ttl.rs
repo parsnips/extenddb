@@ -9,8 +9,6 @@ use extenddb_core::types::{
     TimeToLiveStatus, UpdateTimeToLiveInput, UpdateTimeToLiveOutput,
 };
 use extenddb_core::validation::validate_table_name;
-use extenddb_storage::MetadataEngine;
-use extenddb_storage::TableEngine;
 use extenddb_storage::error::StorageError;
 use serde_json::Value;
 
@@ -23,9 +21,9 @@ use crate::serialize_output;
 ///
 /// Returns `ResourceNotFoundException` if the table does not exist.
 /// Returns `InternalServerError` on storage failures.
-pub async fn handle_describe_time_to_live<S: TableEngine + MetadataEngine>(
+pub async fn handle_describe_time_to_live(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: DescribeTimeToLiveInput =
         serde_json::from_value(body).map_err(crate::deserialize_error)?;
@@ -56,9 +54,9 @@ pub async fn handle_describe_time_to_live<S: TableEngine + MetadataEngine>(
 /// is already in the requested state (idempotency check).
 /// Returns `ResourceNotFoundException` if the table does not exist.
 /// Returns `InternalServerError` on storage failures.
-pub async fn handle_update_time_to_live<S: TableEngine + MetadataEngine>(
+pub async fn handle_update_time_to_live(
     body: Value,
-    ctx: &OperationContext<S>,
+    ctx: &OperationContext,
 ) -> Result<Value, DynamoDbError> {
     let input: UpdateTimeToLiveInput =
         serde_json::from_value(body).map_err(crate::deserialize_error)?;

@@ -17,10 +17,6 @@ use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::{Html, IntoResponse, Response};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use crate::console::ConsoleState;
 use crate::console::html;
 use crate::management::CallerIdentity;
@@ -42,12 +38,7 @@ const DATA_OPS: &[&str] = &[
 ];
 
 /// GET /console/metrics — metrics dashboard.
-pub async fn metrics_page<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ConsoleState<C>>>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn metrics_page(State(state): State<Arc<ConsoleState>>, headers: HeaderMap) -> Response {
     let session = match require_session(&headers, &state).await {
         Ok(s) => s,
         Err(redirect) => return redirect,

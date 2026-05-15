@@ -10,10 +10,6 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
-use extenddb_storage::management_store::{
-    AdminStore, ManagementStore, RateLimitStore, SettingsStore,
-};
-
 use super::ManagementState;
 use super::auth::authenticate_admin;
 use super::ops::{OpError, op_err_to_response};
@@ -37,10 +33,8 @@ pub struct AddMemberRequest {
 }
 
 /// `POST /management/accounts/{id}/groups` — create an IAM group.
-pub async fn create_group<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn create_group(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
     axum::Json(body): axum::Json<CreateGroupRequest>,
@@ -68,10 +62,8 @@ pub async fn create_group<
 }
 
 /// `GET /management/accounts/{id}/groups` — list IAM groups in an account.
-pub async fn list_groups<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn list_groups(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path(account_id): Path<String>,
 ) -> Response {
@@ -106,10 +98,8 @@ pub async fn list_groups<
 }
 
 /// `DELETE /management/accounts/{id}/groups/{name}` — delete an IAM group.
-pub async fn delete_group<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn delete_group(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
 ) -> Response {
@@ -130,10 +120,8 @@ pub async fn delete_group<
 }
 
 /// `POST /management/accounts/{id}/groups/{name}/members` — add a user to a group.
-pub async fn add_member<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn add_member(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, group_name)): Path<(String, String)>,
     axum::Json(body): axum::Json<AddMemberRequest>,
@@ -155,10 +143,8 @@ pub async fn add_member<
 }
 
 /// `DELETE /management/accounts/{id}/groups/{name}/members/{user}` — remove a user from a group.
-pub async fn remove_member<
-    C: SettingsStore + RateLimitStore + AdminStore + ManagementStore + 'static,
->(
-    State(state): State<Arc<ManagementState<C>>>,
+pub async fn remove_member(
+    State(state): State<Arc<ManagementState>>,
     headers: HeaderMap,
     Path((account_id, group_name, user_name)): Path<(String, String, String)>,
 ) -> Response {
