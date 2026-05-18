@@ -63,11 +63,11 @@ pip install -r requirements.txt
 
 ## Authentication Modes
 
-ExtendDB ships with builtin IAM authentication enabled by default. All requests must be signed with valid SigV4 credentials created via the management API.
+ExtendDB ships with builtin IAM-like authentication enabled by default. All requests must be signed with valid SigV4 credentials created via the management API.
 
 | Mode | Config | Description |
 |------|--------|-------------|
-| Builtin IAM | `auth.provider = "builtin"` | Full SigV4 signature verification with local credential store and IAM policy evaluation. This is the default and only supported mode. |
+| Builtin IAM-like | `auth.provider = "builtin"` | Full SigV4 signature verification with local credential store and IAM policy evaluation. This is the default and only supported mode. |
 
 ## Configuration
 
