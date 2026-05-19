@@ -2,7 +2,7 @@
 
 The ExtendDB public roadmap is hosted as a GitHub Project:
 
-**https://github.com/orgs/extenddb/projects/1**
+**https://github.com/orgs/extenddb/projects/**
 
 ## Views
 
