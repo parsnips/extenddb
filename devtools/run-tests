@@ -273,7 +273,7 @@ if $NEEDS_INTEGRATION && [[ "$TARGET" != "real-dynamodb" ]]; then
     if [[ "$EXTENDDB_TEST_ENDPOINT" == https://* ]]; then
         CERT_PATH="$HOME/.${TARGET}/tls/cert.pem"
         if [[ -f "$CERT_PATH" ]] && command -v keytool >/dev/null 2>&1; then
-            TRUSTSTORE=$(mktemp -u --suffix=.jks)
+            TRUSTSTORE=$(mktemp -u).jks
             keytool -importcert -noprompt -alias "$TARGET" -file "$CERT_PATH" \
                 -keystore "$TRUSTSTORE" -storepass changeit 2>/dev/null
             export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=$TRUSTSTORE -Djavax.net.ssl.trustStorePassword=changeit"
@@ -305,14 +305,16 @@ if $NEEDS_INTEGRATION && [[ "$TARGET" != "real-dynamodb" ]]; then
         NEED_RESTART=false
         if ! grep -qE '^\[import\]' "$CONFIG_FOR_SETTINGS" || \
            ! grep -A1 '^\[import\]' "$CONFIG_FOR_SETTINGS" | grep -q '/tmp'; then
-            sed -i '/^# \[import\]/d; /^# paths = \[\].*import/d' "$CONFIG_FOR_SETTINGS"
+            sed '/^# \[import\]/d; /^# paths = \[\].*import/d' "$CONFIG_FOR_SETTINGS" > "$CONFIG_FOR_SETTINGS.tmp" \
+                && mv "$CONFIG_FOR_SETTINGS.tmp" "$CONFIG_FOR_SETTINGS"
             printf '\n[import]\npaths = ["/tmp"]\n' >> "$CONFIG_FOR_SETTINGS"
             NEED_RESTART=true
             echo "  ✓ [import] paths configured for /tmp"
         fi
         if ! grep -qE '^\[export\]' "$CONFIG_FOR_SETTINGS" || \
            ! grep -A1 '^\[export\]' "$CONFIG_FOR_SETTINGS" | grep -q '/tmp'; then
-            sed -i '/^# \[export\]/d; /^# paths = \[\].*export/d' "$CONFIG_FOR_SETTINGS"
+            sed '/^# \[export\]/d; /^# paths = \[\].*export/d' "$CONFIG_FOR_SETTINGS" > "$CONFIG_FOR_SETTINGS.tmp" \
+                && mv "$CONFIG_FOR_SETTINGS.tmp" "$CONFIG_FOR_SETTINGS"
             printf '\n[export]\npaths = ["/tmp"]\n' >> "$CONFIG_FOR_SETTINGS"
             NEED_RESTART=true
             echo "  ✓ [export] paths configured for /tmp"
@@ -335,7 +337,7 @@ if $NEEDS_INTEGRATION && [[ "$TARGET" != "real-dynamodb" ]]; then
     # Export PG connection string for CLI lifecycle tests.
     # Extract from config, strip the database name to get the base URL.
     if [[ -z "${EXTENDDB_TEST_PG_CONNECTION_STRING:-}" && -f "$CONFIG_FOR_SETTINGS" ]]; then
-        FULL_CONN=$(grep -oP 'connection_string\s*=\s*"\K[^"]+' "$CONFIG_FOR_SETTINGS" || true)
+        FULL_CONN=$(grep 'connection_string' "$CONFIG_FOR_SETTINGS" | sed -n 's/.*connection_string[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
         if [[ -n "$FULL_CONN" ]]; then
             # Strip trailing /database_name to get base URL
             export EXTENDDB_TEST_PG_CONNECTION_STRING="${FULL_CONN%/*}"
