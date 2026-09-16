@@ -27,6 +27,11 @@ impl PostgresEngine {
         stream: Option<&StreamCapture>,
     ) -> Result<Option<Item>, StorageError> {
         let ddb_table = data_table_name(&key_info.table_id);
+        let stream_shards = if stream.is_some() {
+            crate::stream_routing::load(&self.data_pool, &key_info.table_id).await?
+        } else {
+            Vec::new()
+        };
 
         let pk_text = composite_pk_to_text(&item, &key_info.key_schema)?;
 
@@ -185,6 +190,7 @@ impl PostgresEngine {
                         .transpose()?;
                     write_stream_record_in_tx(
                         &mut tx,
+                        &stream_shards,
                         key_info,
                         capture,
                         old_for_stream.as_ref(),
@@ -353,6 +359,7 @@ impl PostgresEngine {
                         .transpose()?;
                     write_stream_record_in_tx(
                         &mut tx,
+                        &stream_shards,
                         key_info,
                         capture,
                         old_for_stream.as_ref(),

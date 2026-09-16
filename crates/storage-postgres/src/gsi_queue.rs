@@ -128,7 +128,7 @@ pub(crate) enum PendingApplyContext {
 impl PendingApplyContext {
     /// The base table's key schema, which both kinds carry and the queue needs in
     /// order to route a row to the worker that owns its base key.
-    fn base_key_schema(&self) -> &[KeySchemaElement] {
+    pub(crate) fn base_key_schema(&self) -> &[KeySchemaElement] {
         match self {
             Self::Gsi(c) => &c.base_key_schema,
             Self::Vector(c) => &c.base_key_schema,
@@ -137,13 +137,14 @@ impl PendingApplyContext {
 }
 
 /// A row claimed from `gsi_pending`:
-/// `(id, table_id, old_item, new_item, index_context)`.
+/// `(id, table_id, old_item, new_item, index_context, base_pk)`.
 type ClaimedRow = (
     i64,
     String,
     Option<serde_json::Value>,
     Option<serde_json::Value>,
     serde_json::Value,
+    String,
 );
 
 /// Persistent GSI propagation queue backed by the `gsi_pending` table.
@@ -205,16 +206,10 @@ fn jitter_delay_ms(delay_ms: u64) -> u64 {
 /// deterministic. `context` is the self-describing snapshot the worker uses to
 /// apply the update without a catalog read.
 ///
-/// `ready_at` is clamped to be **monotonically non-decreasing within the
-/// worker partition**: `GREATEST(NOW() + jitter, MAX(ready_at) in partition)`.
-/// The worker drains its partition in `id` order but only sees rows whose
-/// `ready_at` has elapsed, so without this clamp a later write that drew a
-/// smaller jitter could become eligible first and be applied before an earlier
-/// write — leaving the index reflecting a stale value. The clamp guarantees a
-/// row's `ready_at` never precedes that of a lower-`id` row in the same
-/// partition, preserving per-key FIFO convergence while still adding jitter.
-/// This matches the original design, where a partition's single consumer slept
-/// sequentially and so could never reorder updates.
+/// `ready_at` is monotonically non-decreasing for a table's base partition
+/// key. Otherwise a later update with a shorter jitter could become eligible
+/// before an earlier one and leave the index stale. Scope the lookup to the
+/// explicit routing key so enqueueing never reads unrelated physical shards.
 pub(crate) async fn enqueue_gsi_pending(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     table_id: &str,
@@ -237,19 +232,21 @@ pub(crate) async fn enqueue_gsi_pending(
     // Route all updates for a given base item to one worker (per-key FIFO).
     // The base key is immutable over an item's lifetime; `new_item` carries it
     // for puts/updates, `old_item` for deletes.
-    let worker_partition = match new_item.or(old_item) {
-        Some(item) => partition_for(&composite_pk_to_text(item, context.base_key_schema())?),
-        None => 0,
-    };
+    let item = new_item.or(old_item).ok_or_else(|| {
+        StorageError::Internal("Cannot enqueue an index update without a base item".to_owned())
+    })?;
+    let base_pk = composite_pk_to_text(item, context.base_key_schema())?;
+    let worker_partition = partition_for(&base_pk);
 
     let delay_interval = jitter_delay_ms(delay_ms) as f64 / 1000.0;
     sqlx::query(
         "INSERT INTO gsi_pending \
-         (table_id, worker_partition, old_item, new_item, index_context, ready_at) \
-         VALUES ($1, $2, $3, $4, $5, GREATEST( \
+         (table_id, worker_partition, old_item, new_item, index_context, base_pk, ready_at) \
+         VALUES ($1, $2, $3, $4, $5, $7, GREATEST( \
              NOW() + make_interval(secs => $6), \
              COALESCE( \
-                 (SELECT MAX(ready_at) FROM gsi_pending WHERE worker_partition = $2), \
+                 (SELECT MAX(ready_at) FROM gsi_pending \
+                  WHERE table_id = $1 AND base_pk = $7), \
                  NOW() \
              ) \
          ))",
@@ -260,6 +257,7 @@ pub(crate) async fn enqueue_gsi_pending(
     .bind(new_json)
     .bind(context_json)
     .bind(delay_interval)
+    .bind(&base_pk)
     .execute(&mut **tx)
     .await
     .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -369,7 +367,7 @@ async fn process_batch(worker_id: u64, q: &GsiQueue) -> Result<usize, StorageErr
         // table's rows simply wait; the flip to ACTIVE deletes the hold and wakes
         // the workers.
         let row: Option<ClaimedRow> = sqlx::query_as(
-            "SELECT id, table_id, old_item, new_item, index_context FROM gsi_pending \
+            "SELECT id, table_id, old_item, new_item, index_context, base_pk FROM gsi_pending \
              WHERE worker_partition = $1 AND ready_at <= NOW() \
              AND NOT EXISTS ( \
                  SELECT 1 FROM vector_index_holds h WHERE h.table_id = gsi_pending.table_id \
@@ -383,7 +381,7 @@ async fn process_batch(worker_id: u64, q: &GsiQueue) -> Result<usize, StorageErr
         .await
         .map_err(|e| StorageError::Internal(e.to_string()))?;
 
-        let Some((id, table_id, old_json, new_json, ctx_json)) = row else {
+        let Some((id, table_id, old_json, new_json, ctx_json, base_pk)) = row else {
             // No ready rows visible to this worker; end the batch.
             let _ = tx.rollback().await;
             break;
@@ -394,8 +392,9 @@ async fn process_batch(worker_id: u64, q: &GsiQueue) -> Result<usize, StorageErr
         )
         .await?;
 
-        sqlx::query("DELETE FROM gsi_pending WHERE id = $1")
+        sqlx::query("DELETE FROM gsi_pending WHERE id = $1 AND base_pk = $2")
             .bind(id)
+            .bind(&base_pk)
             .execute(&mut *tx)
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;

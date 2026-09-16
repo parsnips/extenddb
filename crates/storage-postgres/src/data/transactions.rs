@@ -99,6 +99,23 @@ impl PostgresEngine {
             }
         }
 
+        let mut stream_shards = HashMap::new();
+        for op in ops {
+            let capture = match op {
+                TransactWriteOp::Put { stream, .. }
+                | TransactWriteOp::Delete { stream, .. }
+                | TransactWriteOp::Update { stream, .. } => stream.as_ref(),
+                TransactWriteOp::ConditionCheck { .. } => None,
+            };
+            let table_id = transact_op_table_id(op);
+            if capture.is_some() && !stream_shards.contains_key(table_id) {
+                stream_shards.insert(
+                    table_id.to_owned(),
+                    crate::stream_routing::load(&self.data_pool, table_id).await?,
+                );
+            }
+        }
+
         // D-4: Read the system default delay live (P119), so a runtime change
         // applies to this transaction rather than up to 30 s later.
         let sys_delay = self.index_propagation_delay().await;
@@ -170,6 +187,7 @@ impl PostgresEngine {
             if let Some(capture) = capture {
                 write_stream_record_in_tx(
                     &mut tx,
+                    &stream_shards[transact_op_table_id(op)],
                     match op {
                         TransactWriteOp::Put { key_info, .. }
                         | TransactWriteOp::Delete { key_info, .. }

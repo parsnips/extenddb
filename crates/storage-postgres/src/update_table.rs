@@ -342,6 +342,7 @@ impl PostgresEngine {
                         account_id,
                         &input.table_name,
                         &table_id,
+                        self.stream_sharding.as_ref(),
                     )
                     .await?;
                 } else {

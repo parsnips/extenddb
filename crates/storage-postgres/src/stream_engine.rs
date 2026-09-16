@@ -4,16 +4,17 @@
 //! `StreamEngine` trait implementation for `PostgresEngine`.
 
 use extenddb_core::types::{
-    SequenceNumberRange, Shard, StreamDescription, StreamRecord, StreamStatus, StreamSummary,
-    StreamViewType,
+    KeySchemaElement, SequenceNumberRange, Shard, StreamDescription, StreamRecord, StreamStatus,
+    StreamSummary, StreamViewType,
 };
 use extenddb_storage::StreamEngine;
 use extenddb_storage::error::StorageError;
-use extenddb_storage::util::{parse_stream_arn, stream_arn};
+use extenddb_storage::util::{composite_pk_to_text, parse_stream_arn, stream_arn};
 use futures::future::BoxFuture;
 use sqlx::PgPool;
 
 use crate::PostgresEngine;
+use crate::stream_routing::{self, StreamSharding};
 
 /// Number of fixed shards per stream (hash-based assignment).
 const SHARDS_PER_STREAM: u32 = 4;
@@ -34,6 +35,7 @@ impl PostgresEngine {
         account_id: &str,
         table_name: &str,
         table_id: &str,
+        routing: Option<&StreamSharding>,
     ) -> Result<String, StorageError> {
         let label: String = sqlx::query_scalar(
             "UPDATE tables SET stream_label = to_char(NOW(), 'YYYY-MM-DD\"T\"HH24:MI:SS') \
@@ -54,22 +56,35 @@ impl PostgresEngine {
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
 
-        for i in 0..SHARDS_PER_STREAM {
-            // Zero-padded to 16 digits so the shard ID is always at
-            // least 28 characters (minimum length the AWS SDKs enforce for ShardId)
-            // even for the shortest legal table name.
-            let shard_id = format!("shardId-{table_name}-{i:016}");
+        let shard_ids = match routing {
+            Some(routing) => routing.shard_ids(table_id)?,
+            None => (0..SHARDS_PER_STREAM)
+                .map(|bucket| format!("shardId-{table_name}-{bucket:016}"))
+                .collect(),
+        };
+        for shard_id in shard_ids {
             let start_seq = format!("{:021}", 0);
-            sqlx::query(
-                "INSERT INTO stream_shards (shard_id, table_id, starting_sequence_number) \
-                 VALUES ($1, $2, $3)",
-            )
-            .bind(&shard_id)
-            .bind(table_id)
-            .bind(&start_seq)
-            .execute(&mut *data_tx)
-            .await
-            .map_err(|e| StorageError::Internal(e.to_string()))?;
+            if let Some(routing) = routing {
+                sqlx::query(
+                    "INSERT INTO stream_shards (shard_id, table_id, starting_sequence_number, routing) \
+                     VALUES ($1, $2, $3, $4)",
+                )
+                .bind(&shard_id).bind(table_id).bind(&start_seq)
+                .bind(sqlx::types::Json(routing))
+                .execute(&mut *data_tx).await
+                .map_err(|e| StorageError::Internal(e.to_string()))?;
+            } else {
+                sqlx::query(
+                    "INSERT INTO stream_shards (shard_id, table_id, starting_sequence_number) \
+                     VALUES ($1, $2, $3)",
+                )
+                .bind(&shard_id)
+                .bind(table_id)
+                .bind(&start_seq)
+                .execute(&mut *data_tx)
+                .await
+                .map_err(|e| StorageError::Internal(e.to_string()))?;
+            }
         }
 
         data_tx
@@ -97,8 +112,8 @@ impl StreamEngine for PostgresEngine {
             let record_json =
                 serde_json::to_value(&record).map_err(|e| StorageError::Internal(e.to_string()))?;
 
-            let table_id: String = sqlx::query_scalar(
-                "SELECT table_id FROM tables WHERE account_id = $1 AND table_name = $2",
+            let (table_id, key_schema): (String, serde_json::Value) = sqlx::query_as(
+                "SELECT table_id, key_schema FROM tables WHERE account_id = $1 AND table_name = $2",
             )
             .bind(&account_id)
             .bind(&table_name)
@@ -106,15 +121,28 @@ impl StreamEngine for PostgresEngine {
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
 
+            let key_schema: Vec<KeySchemaElement> = serde_json::from_value(key_schema)
+                .map_err(|e| StorageError::Internal(e.to_string()))?;
+            let base_pk = composite_pk_to_text(&record.dynamodb.keys, &key_schema)?;
+            let legacy_pk =
+                stream_routing::legacy_partition_key(&record.dynamodb.keys, &key_schema)?;
+            let shards = stream_routing::load(&self.data_pool, &table_id).await?;
+            if stream_routing::assign(&shards, &base_pk, &legacy_pk)? != shard_id {
+                return Err(StorageError::Validation(
+                    "Stream shard does not match the record's base partition key".to_owned(),
+                ));
+            }
+
             sqlx::query(
-                "INSERT INTO stream_records (sequence_number, shard_id, table_id, event_name, record_data) \
-                 VALUES ($1, $2, $3, $4, $5)",
+                "INSERT INTO stream_records (sequence_number, shard_id, table_id, event_name, record_data, base_pk) \
+                 VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(&record.dynamodb.sequence_number)
             .bind(&shard_id)
             .bind(&table_id)
             .bind(format!("{:?}", record.event_name))
             .bind(&record_json)
+            .bind(&base_pk)
             .execute(&self.data_pool)
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -447,26 +475,10 @@ impl StreamEngine for PostgresEngine {
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
 
-            let shards: Vec<(String,)> = sqlx::query_as(
-                "SELECT shard_id FROM stream_shards \
-                 WHERE table_id = $1 \
-                 ORDER BY shard_id",
-            )
-            .bind(&table_id)
-            .fetch_all(&self.data_pool)
-            .await
-            .map_err(|e| StorageError::Internal(e.to_string()))?;
+            let shards = stream_routing::load(&self.data_pool, &table_id).await?;
 
-            if shards.is_empty() {
-                return Err(StorageError::Internal(format!(
-                    "No stream shards for table {table_name}"
-                )));
-            }
-
-            let hash = crc32fast::hash(partition_key.as_bytes());
-            #[allow(clippy::cast_possible_truncation)]
-            let idx = (hash as usize) % shards.len();
-            Ok(shards[idx].0.clone())
+            // Configured streams take the encoded base_pk (all HASH attributes).
+            Ok(stream_routing::assign(&shards, &partition_key, &partition_key)?.to_owned())
         })
     }
 

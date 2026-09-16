@@ -4,17 +4,16 @@
 //! Transaction helper functions: item fetch/upsert/delete within a transaction,
 //! stream record writing, and idempotency token checking.
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use extenddb_core::types::{
     AttributeValue, Item, StreamEventName, StreamRecord, StreamRecordData, StreamViewType,
     TableKeyInfo, item_size_bytes,
 };
 use extenddb_storage::StreamCapture;
 use extenddb_storage::error::StorageError;
-use extenddb_storage::util::{SortKeyValue, parse_sk, pk_to_text, sk_column, sk_info};
+use extenddb_storage::util::{SortKeyValue, composite_pk_to_text, parse_sk, sk_column, sk_info};
 
 use super::{data_table_name, json_to_item};
+use crate::stream_routing::{self, StreamShard};
 
 /// Fetch a single item within an existing transaction.
 pub(super) async fn fetch_item_in_tx(
@@ -23,11 +22,7 @@ pub(super) async fn fetch_item_in_tx(
     key: &Item,
 ) -> Result<Option<Item>, StorageError> {
     let ddb_table = data_table_name(&key_info.table_id);
-    let pk_name = &key_info.key_schema[0].attribute_name;
-    let pk_value = key
-        .get(pk_name)
-        .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-    let pk_text = pk_to_text(pk_value)?;
+    let pk_text = composite_pk_to_text(key, &key_info.key_schema)?;
 
     let json_opt = if let Some((sk_name, sk_type)) =
         sk_info(&key_info.key_schema, &key_info.attribute_definitions)
@@ -39,12 +34,12 @@ pub(super) async fn fetch_item_in_tx(
         let sk_col = sk_column(sk_type);
         let sql = format!("SELECT item_data FROM {ddb_table} WHERE pk = $1 AND {sk_col} = $2");
         let row: Option<(serde_json::Value,)> =
-            bind_sk_fetch_optional!(&sql, pk_text.as_ref(), &sk, &mut **tx)?;
+            bind_sk_fetch_optional!(&sql, pk_text.as_str(), &sk, &mut **tx)?;
         row.map(|(v,)| v)
     } else {
         let sql = format!("SELECT item_data FROM {ddb_table} WHERE pk = $1");
         let row: Option<(serde_json::Value,)> = sqlx::query_as(&sql)
-            .bind(pk_text.as_ref())
+            .bind(pk_text.as_str())
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -61,11 +56,7 @@ pub(super) async fn fetch_item_for_update(
     key: &Item,
 ) -> Result<Option<Item>, StorageError> {
     let ddb_table = data_table_name(&key_info.table_id);
-    let pk_name = &key_info.key_schema[0].attribute_name;
-    let pk_value = key
-        .get(pk_name)
-        .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-    let pk_text = pk_to_text(pk_value)?;
+    let pk_text = composite_pk_to_text(key, &key_info.key_schema)?;
 
     let json_opt = if let Some((sk_name, sk_type)) =
         sk_info(&key_info.key_schema, &key_info.attribute_definitions)
@@ -78,12 +69,12 @@ pub(super) async fn fetch_item_for_update(
         let sql =
             format!("SELECT item_data FROM {ddb_table} WHERE pk = $1 AND {sk_col} = $2 FOR UPDATE");
         let row: Option<(serde_json::Value,)> =
-            bind_sk_fetch_optional!(&sql, pk_text.as_ref(), &sk, &mut **tx)?;
+            bind_sk_fetch_optional!(&sql, pk_text.as_str(), &sk, &mut **tx)?;
         row.map(|(v,)| v)
     } else {
         let sql = format!("SELECT item_data FROM {ddb_table} WHERE pk = $1 FOR UPDATE");
         let row: Option<(serde_json::Value,)> = sqlx::query_as(&sql)
-            .bind(pk_text.as_ref())
+            .bind(pk_text.as_str())
             .fetch_optional(&mut **tx)
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -100,11 +91,7 @@ pub(super) async fn upsert_item_in_tx(
     item: &Item,
 ) -> Result<(), StorageError> {
     let ddb_table = data_table_name(&key_info.table_id);
-    let pk_name = &key_info.key_schema[0].attribute_name;
-    let pk_value = item
-        .get(pk_name)
-        .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-    let pk_text = pk_to_text(pk_value)?;
+    let pk_text = composite_pk_to_text(item, &key_info.key_schema)?;
     let item_json =
         serde_json::to_value(item).map_err(|e| StorageError::Internal(e.to_string()))?;
 
@@ -119,14 +106,14 @@ pub(super) async fn upsert_item_in_tx(
             "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
              ON CONFLICT (pk, {sk_col}) DO UPDATE SET item_data = EXCLUDED.item_data"
         );
-        bind_sk_execute!(&sql, pk_text.as_ref(), &sk, &item_json, &mut **tx)?;
+        bind_sk_execute!(&sql, pk_text.as_str(), &sk, &item_json, &mut **tx)?;
     } else {
         let sql = format!(
             "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
              ON CONFLICT (pk) DO UPDATE SET item_data = EXCLUDED.item_data"
         );
         sqlx::query(&sql)
-            .bind(pk_text.as_ref())
+            .bind(pk_text.as_str())
             .bind(&item_json)
             .execute(&mut **tx)
             .await
@@ -152,11 +139,7 @@ pub(super) async fn insert_item_if_absent_in_tx(
     item: &Item,
 ) -> Result<bool, StorageError> {
     let ddb_table = data_table_name(&key_info.table_id);
-    let pk_name = &key_info.key_schema[0].attribute_name;
-    let pk_value = item
-        .get(pk_name)
-        .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-    let pk_text = pk_to_text(pk_value)?;
+    let pk_text = composite_pk_to_text(item, &key_info.key_schema)?;
     let item_json =
         serde_json::to_value(item).map_err(|e| StorageError::Internal(e.to_string()))?;
 
@@ -172,14 +155,14 @@ pub(super) async fn insert_item_if_absent_in_tx(
             "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
              ON CONFLICT (pk, {sk_col}) DO NOTHING"
         );
-        bind_sk_execute!(&sql, pk_text.as_ref(), &sk, &item_json, &mut **tx)?.rows_affected()
+        bind_sk_execute!(&sql, pk_text.as_str(), &sk, &item_json, &mut **tx)?.rows_affected()
     } else {
         let sql = format!(
             "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
              ON CONFLICT (pk) DO NOTHING"
         );
         sqlx::query(&sql)
-            .bind(pk_text.as_ref())
+            .bind(pk_text.as_str())
             .bind(&item_json)
             .execute(&mut **tx)
             .await
@@ -196,11 +179,7 @@ pub(super) async fn delete_item_in_tx(
     key: &Item,
 ) -> Result<(), StorageError> {
     let ddb_table = data_table_name(&key_info.table_id);
-    let pk_name = &key_info.key_schema[0].attribute_name;
-    let pk_value = key
-        .get(pk_name)
-        .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-    let pk_text = pk_to_text(pk_value)?;
+    let pk_text = composite_pk_to_text(key, &key_info.key_schema)?;
 
     if let Some((sk_name, sk_type)) = sk_info(&key_info.key_schema, &key_info.attribute_definitions)
     {
@@ -213,21 +192,21 @@ pub(super) async fn delete_item_in_tx(
         match &sk {
             SortKeyValue::S(s) => {
                 sqlx::query(&sql)
-                    .bind(pk_text.as_ref())
+                    .bind(pk_text.as_str())
                     .bind(s)
                     .execute(&mut **tx)
                     .await
             }
             SortKeyValue::N(n) => {
                 sqlx::query(&sql)
-                    .bind(pk_text.as_ref())
+                    .bind(pk_text.as_str())
                     .bind(n)
                     .execute(&mut **tx)
                     .await
             }
             SortKeyValue::B(b) => {
                 sqlx::query(&sql)
-                    .bind(pk_text.as_ref())
+                    .bind(pk_text.as_str())
                     .bind(b)
                     .execute(&mut **tx)
                     .await
@@ -237,7 +216,7 @@ pub(super) async fn delete_item_in_tx(
     } else {
         let sql = format!("DELETE FROM {ddb_table} WHERE pk = $1");
         sqlx::query(&sql)
-            .bind(pk_text.as_ref())
+            .bind(pk_text.as_str())
             .execute(&mut **tx)
             .await
             .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -260,6 +239,7 @@ pub(super) async fn delete_item_in_tx(
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn write_stream_record_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    shards: &[StreamShard],
     key_info: &TableKeyInfo,
     capture: &StreamCapture,
     old_item: Option<&Item>,
@@ -279,6 +259,10 @@ pub(super) async fn write_stream_record_in_tx(
         // Unreachable: early return above handles (None, None).
         (None, None) => return Ok(()),
     };
+
+    // Match the base table and index routing key exactly, including every HASH
+    // attribute. Configured stream buckets use this same physical routing key.
+    let base_pk = composite_pk_to_text(source, &key_info.key_schema)?;
 
     // Extract key attributes.
     let keys: std::collections::BTreeMap<String, AttributeValue> = key_info
@@ -303,37 +287,10 @@ pub(super) async fn write_stream_record_in_tx(
 
     let size = source_item.map_or(0, |i| i64::try_from(item_size_bytes(i)).unwrap_or(i64::MAX));
 
-    // Assign shard within the transaction.
-    let pk_name = &key_info.key_schema[0].attribute_name;
-    let pk_str = source
-        .get(pk_name)
-        .map(|v| match v {
-            AttributeValue::S(s) => s.clone(),
-            AttributeValue::N(n) => n.clone(),
-            AttributeValue::B(b) => BASE64.encode(b),
-            _ => String::new(),
-        })
-        .unwrap_or_default();
-
-    let shards: Vec<(String,)> = sqlx::query_as(
-        "SELECT shard_id FROM stream_shards \
-         WHERE table_id = $1 \
-         ORDER BY shard_id",
-    )
-    .bind(&key_info.table_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(|e| StorageError::Internal(e.to_string()))?;
-
-    if shards.is_empty() {
-        // No shards — streams may not be fully set up yet. Skip silently.
-        return Ok(());
-    }
-
-    let hash = crc32fast::hash(pk_str.as_bytes());
-    #[allow(clippy::cast_possible_truncation)]
-    let idx = (hash as usize) % shards.len();
-    let shard_id = &shards[idx].0;
+    // Assignment and insertion use the same persisted mapping on every write
+    // path. Changing the server's config cannot move an existing stream.
+    let legacy_pk = stream_routing::legacy_partition_key(source, &key_info.key_schema)?;
+    let shard_id = stream_routing::assign(shards, &base_pk, &legacy_pk)?;
 
     // Generate monotonic sequence number within the transaction (CB-21).
     let (seq_val,): (i64,) = sqlx::query_as("SELECT nextval('stream_seq')")
@@ -370,14 +327,15 @@ pub(super) async fn write_stream_record_in_tx(
         serde_json::to_value(&record).map_err(|e| StorageError::Internal(e.to_string()))?;
 
     sqlx::query(
-        "INSERT INTO stream_records (sequence_number, shard_id, table_id, event_name, record_data) \
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO stream_records (sequence_number, shard_id, table_id, event_name, record_data, base_pk) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(&record.dynamodb.sequence_number)
     .bind(shard_id)
     .bind(&key_info.table_id)
     .bind(format!("{:?}", record.event_name))
     .bind(&record_json)
+    .bind(&base_pk)
     .execute(&mut **tx)
     .await
     .map_err(|e| StorageError::Internal(e.to_string()))?;

@@ -8,7 +8,7 @@ use extenddb_core::types::{Item, TableKeyInfo};
 use extenddb_core::validation;
 use extenddb_storage::StreamCapture;
 use extenddb_storage::error::StorageError;
-use extenddb_storage::util::{parse_sk, pk_to_text, sk_column, sk_info};
+use extenddb_storage::util::{composite_pk_to_text, parse_sk, sk_column, sk_info};
 
 use super::index::{enqueue_async_indexes, fetch_write_path_indexes, sync_indexes};
 use super::query::check_condition;
@@ -31,12 +31,13 @@ impl PostgresEngine {
         stream: Option<&StreamCapture>,
     ) -> Result<(Option<Item>, Option<Item>), StorageError> {
         let ddb_table = data_table_name(&key_info.table_id);
+        let stream_shards = if stream.is_some() {
+            crate::stream_routing::load(&self.data_pool, &key_info.table_id).await?
+        } else {
+            Vec::new()
+        };
 
-        let pk_name = &key_info.key_schema[0].attribute_name;
-        let pk_value = key
-            .get(pk_name)
-            .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-        let pk_text = pk_to_text(pk_value)?;
+        let pk_text = composite_pk_to_text(key, &key_info.key_schema)?;
 
         // UpdateItem always needs a transaction (read-modify-write)
         let mut tx = self
@@ -122,14 +123,14 @@ impl PostgresEngine {
                         "SELECT item_data FROM {ddb_table} WHERE pk = $1 AND {sk_col} = $2 FOR UPDATE"
                     );
                     let row: Option<(serde_json::Value,)> =
-                        bind_sk_fetch_optional!(&select_sql, pk_text.as_ref(), sk, &mut *tx)?;
+                        bind_sk_fetch_optional!(&select_sql, pk_text.as_str(), sk, &mut *tx)?;
                     row.map(|(v,)| v)
                 }
                 None => {
                     let select_sql =
                         format!("SELECT item_data FROM {ddb_table} WHERE pk = $1 FOR UPDATE");
                     let row: Option<(serde_json::Value,)> = sqlx::query_as(&select_sql)
-                        .bind(pk_text.as_ref())
+                        .bind(pk_text.as_str())
                         .fetch_optional(&mut *tx)
                         .await
                         .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -202,13 +203,13 @@ impl PostgresEngine {
                         let update_sql = format!(
                             "UPDATE {ddb_table} SET item_data = $3 WHERE pk = $1 AND {sk_col} = $2"
                         );
-                        bind_sk_execute!(&update_sql, pk_text.as_ref(), sk, &item_json, &mut *tx)?;
+                        bind_sk_execute!(&update_sql, pk_text.as_str(), sk, &item_json, &mut *tx)?;
                     }
                     None => {
                         let update_sql =
                             format!("UPDATE {ddb_table} SET item_data = $2 WHERE pk = $1");
                         sqlx::query(&update_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(&item_json)
                             .execute(&mut *tx)
                             .await
@@ -225,7 +226,7 @@ impl PostgresEngine {
                         "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
                          ON CONFLICT (pk, {sk_col}) DO NOTHING"
                     );
-                    bind_sk_execute!(&insert_sql, pk_text.as_ref(), sk, &item_json, &mut *tx)?
+                    bind_sk_execute!(&insert_sql, pk_text.as_str(), sk, &item_json, &mut *tx)?
                         .rows_affected()
                         == 1
                 }
@@ -235,7 +236,7 @@ impl PostgresEngine {
                          ON CONFLICT (pk) DO NOTHING"
                     );
                     sqlx::query(&insert_sql)
-                        .bind(pk_text.as_ref())
+                        .bind(pk_text.as_str())
                         .bind(&item_json)
                         .execute(&mut *tx)
                         .await
@@ -276,6 +277,7 @@ impl PostgresEngine {
         if let Some(capture) = stream {
             write_stream_record_in_tx(
                 &mut tx,
+                &stream_shards,
                 key_info,
                 capture,
                 pre_mutation_item.as_ref(),

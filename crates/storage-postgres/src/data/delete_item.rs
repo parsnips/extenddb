@@ -7,7 +7,7 @@ use extenddb_core::expression::{Expr, ExpressionMaps};
 use extenddb_core::types::{Item, TableKeyInfo};
 use extenddb_storage::StreamCapture;
 use extenddb_storage::error::StorageError;
-use extenddb_storage::util::{SortKeyValue, parse_sk, pk_to_text, sk_column, sk_info};
+use extenddb_storage::util::{SortKeyValue, composite_pk_to_text, parse_sk, sk_column, sk_info};
 
 use super::index::{enqueue_async_indexes, fetch_write_path_indexes, sync_indexes};
 use super::query::check_condition;
@@ -27,12 +27,13 @@ impl PostgresEngine {
         stream: Option<&StreamCapture>,
     ) -> Result<Option<Item>, StorageError> {
         let ddb_table = data_table_name(&key_info.table_id);
+        let stream_shards = if stream.is_some() {
+            crate::stream_routing::load(&self.data_pool, &key_info.table_id).await?
+        } else {
+            Vec::new()
+        };
 
-        let pk_name = &key_info.key_schema[0].attribute_name;
-        let pk_value = key
-            .get(pk_name)
-            .ok_or_else(|| StorageError::Internal("missing partition key".to_owned()))?;
-        let pk_text = pk_to_text(pk_value)?;
+        let pk_text = composite_pk_to_text(key, &key_info.key_schema)?;
 
         // Both index families in one catalog visit (D-4: sync + async split for the
         // secondary indexes).
@@ -93,7 +94,7 @@ impl PostgresEngine {
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
 
                 let old: Option<(serde_json::Value,)> =
-                    bind_sk_fetch_optional!(&select_sql, pk_text.as_ref(), &sk, &mut *tx)?;
+                    bind_sk_fetch_optional!(&select_sql, pk_text.as_str(), &sk, &mut *tx)?;
 
                 if let Some((ref old_json,)) = old {
                     let old_item: Item = json_to_item(old_json.clone())?;
@@ -122,21 +123,21 @@ impl PostgresEngine {
                 match &sk {
                     SortKeyValue::S(s) => {
                         sqlx::query(&delete_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(s)
                             .execute(&mut *tx)
                             .await
                     }
                     SortKeyValue::N(n) => {
                         sqlx::query(&delete_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(n)
                             .execute(&mut *tx)
                             .await
                     }
                     SortKeyValue::B(b) => {
                         sqlx::query(&delete_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(b)
                             .execute(&mut *tx)
                             .await
@@ -173,6 +174,7 @@ impl PostgresEngine {
                         .transpose()?;
                     write_stream_record_in_tx(
                         &mut tx,
+                        &stream_shards,
                         key_info,
                         capture,
                         old_for_stream.as_ref(),
@@ -233,21 +235,21 @@ impl PostgresEngine {
                 match &sk {
                     SortKeyValue::S(s) => {
                         sqlx::query(&delete_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(s)
                             .execute(&self.data_pool)
                             .await
                     }
                     SortKeyValue::N(n) => {
                         sqlx::query(&delete_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(n)
                             .execute(&self.data_pool)
                             .await
                     }
                     SortKeyValue::B(b) => {
                         sqlx::query(&delete_sql)
-                            .bind(pk_text.as_ref())
+                            .bind(pk_text.as_str())
                             .bind(b)
                             .execute(&self.data_pool)
                             .await
@@ -270,7 +272,7 @@ impl PostgresEngine {
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
 
                 let old: Option<(serde_json::Value,)> = sqlx::query_as(&select_sql)
-                    .bind(pk_text.as_ref())
+                    .bind(pk_text.as_str())
                     .fetch_optional(&mut *tx)
                     .await
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -297,7 +299,7 @@ impl PostgresEngine {
                 }
 
                 sqlx::query(&delete_sql)
-                    .bind(pk_text.as_ref())
+                    .bind(pk_text.as_str())
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| StorageError::Internal(e.to_string()))?;
@@ -331,6 +333,7 @@ impl PostgresEngine {
                         .transpose()?;
                     write_stream_record_in_tx(
                         &mut tx,
+                        &stream_shards,
                         key_info,
                         capture,
                         old_for_stream.as_ref(),
@@ -389,7 +392,7 @@ impl PostgresEngine {
             } else {
                 let delete_sql = format!("DELETE FROM {ddb_table} WHERE pk = $1");
                 sqlx::query(&delete_sql)
-                    .bind(pk_text.as_ref())
+                    .bind(pk_text.as_str())
                     .execute(&self.data_pool)
                     .await
                     .map_err(|e| StorageError::Internal(e.to_string()))?;

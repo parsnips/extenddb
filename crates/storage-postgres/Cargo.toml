@@ -29,6 +29,7 @@ time = { workspace = true }
 uuid = { workspace = true }
 base64 = { workspace = true }
 crc32fast = { workspace = true }
+xxhash-rust = { version = "0.8", features = ["xxh64", "xxh3"] }
 rand = { workspace = true }
 bcrypt = { workspace = true }
 aes-gcm = { workspace = true }

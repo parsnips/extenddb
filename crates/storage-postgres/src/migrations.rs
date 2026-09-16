@@ -6,6 +6,9 @@
 use extenddb_storage::management_store::{OpError, OpResult};
 use sqlx::PgPool;
 
+mod base_pk;
+mod stream_routing;
+
 /// Embedded catalog migration files, applied in order.
 pub(crate) const CATALOG_MIGRATIONS: &[(&str, &str)] = &[
     (
@@ -124,12 +127,16 @@ pub(crate) async fn run_data_migrations(pool: &PgPool) -> OpResult<()> {
 }
 
 /// Programmatic ("code") data migrations, tracked in `schema_history` alongside
-/// the SQL migrations. Unlike a static `.sql` file, these enumerate the
-/// dynamically-named index tables (`_ddb_<id>`) from the catalog and must run
-/// outside a transaction (they use `CREATE INDEX CONCURRENTLY`), so they cannot
-/// be expressed as SQL in [`DATA_MIGRATIONS`]. Applied by `extenddb migrate`
+/// the SQL migrations. These need catalog metadata or Rust key encoding and
+/// cannot be expressed as static SQL in [`DATA_MIGRATIONS`]. The base-key index
+/// migration uses `CREATE INDEX CONCURRENTLY` outside a transaction; the routing
+/// key migration commits its backfill and ledger atomically. Applied by `extenddb migrate`
 /// after the SQL migrations, so the operator controls when the change happens.
-pub(crate) const DATA_CODE_MIGRATIONS: &[&str] = &["003_gsi_base_key_index"];
+pub(crate) const DATA_CODE_MIGRATIONS: &[&str] = &[
+    "003_gsi_base_key_index",
+    base_pk::NAME,
+    stream_routing::NAME,
+];
 
 /// Run programmatic data migrations, skipping already-applied ones.
 ///
@@ -150,6 +157,15 @@ pub(crate) async fn run_data_code_migrations(
         match *name {
             "003_gsi_base_key_index" => {
                 ensure_gsi_base_key_indexes(catalog_pool, data_pool).await?;
+            }
+            base_pk::NAME => {
+                base_pk::migrate(catalog_pool, data_pool).await?;
+                // This migration records itself in its data transaction.
+                continue;
+            }
+            stream_routing::NAME => {
+                stream_routing::migrate(data_pool).await?;
+                continue;
             }
             other => {
                 return Err(OpError::Internal(format!(

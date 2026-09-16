@@ -83,6 +83,14 @@
                                 # DynamoDB request makes concurrent authz queries
                                 # — size this to match expected concurrency.
 
+# Optional mapping for NEW streams. Existing streams retain their saved mapping.
+# Omit for legacy CRC32/4. Neki owns physical routing; see docs/neki-stream-sharding.md.
+# [storage.postgres.stream_sharding]
+# hash = "xxh3_64"             # Neki native xxhash; also "xxhash64" or "crc32"
+# mapping = "hash_range"       # High-bit ranges; "modulo" for custom routing
+# bucket_count = 4            # 1..65536; hash_range requires a power of two
+# seed = 0                    # Neki native xxhash uses zero; crc32 requires zero
+
 [storage.mongodb]
 # MongoDB connection string. Requires a replica set (even single-node).
 # connection_string = "mongodb://localhost:27017/?replicaSet=rs0"

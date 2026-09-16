@@ -25,6 +25,7 @@ mod migrations;
 mod operations;
 mod pg_util;
 mod stream_engine;
+mod stream_routing;
 mod table_engine;
 mod table_helpers;
 mod ttl_worker;
@@ -65,6 +66,7 @@ pub use data::vector_index::rebuild_stuck_vector_indexes;
 /// Rebuild vector indexes a crash left mid-build. A startup step, exported because
 /// it is part of bringing a deployment up rather than an internal detail.
 pub use data::vector_index::reconcile_incomplete_vector_indexes;
+pub use stream_routing::{BucketMapping, StreamHash, StreamSharding};
 
 /// The `PostgreSQL` storage backend.
 ///
@@ -150,6 +152,7 @@ pub struct PostgresConfig {
     pub pool_size: u32,
     /// Maximum item size in bytes for post-update validation.
     pub max_item_size_bytes: usize,
+    pub stream_sharding: Option<StreamSharding>,
 }
 
 /// `PostgreSQL` storage backend.
@@ -182,6 +185,7 @@ pub(crate) const INDEX_PROPAGATION_DELAY_QUERY: &str = "SELECT value FROM settin
      ORDER BY key = 'index_propagation_delay_ms' DESC LIMIT 1";
 
 pub struct PostgresEngine {
+    pub(crate) stream_sharding: Option<StreamSharding>,
     pub(crate) pool: PgPool,
     /// Connection pool for the data database where `_ddb_*` tables live.
     pub(crate) data_pool: PgPool,
@@ -213,6 +217,9 @@ pub struct PostgresEngine {
 
 impl PostgresEngine {
     pub async fn new(config: &PostgresConfig, region: &str) -> Result<Self, StorageError> {
+        if let Some(routing) = &config.stream_sharding {
+            routing.validate()?;
+        }
         // Enforce a minimum of 10 connections per pool. Smaller values starve
         // the auth/authz query fanout under concurrent load. If the configured
         // value is below the floor, log a warning and clamp.
@@ -284,6 +291,7 @@ impl PostgresEngine {
         }
 
         Ok(Self {
+            stream_sharding: config.stream_sharding.clone(),
             pool,
             data_pool,
             region: region.to_owned(),
@@ -632,12 +640,17 @@ fn server_components_factory(
     let max_connections = config.max_connections();
     let max_catalog_connections = config.max_catalog_connections();
     let region = region.to_string();
+    let stream_sharding = config
+        .as_any()
+        .downcast_ref::<PostgresStorageConfig>()
+        .and_then(|config| config.stream_sharding.clone());
     Box::pin(async move {
         // Build PostgresConfig from extracted values
         let pg_config = PostgresConfig {
             connection_string: connection_string.clone(),
             pool_size: max_connections,
             max_item_size_bytes: 400_000,
+            stream_sharding,
         };
 
         // Create PostgresEngine

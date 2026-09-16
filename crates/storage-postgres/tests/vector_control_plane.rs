@@ -164,6 +164,9 @@ async fn scratch(pgvector: Pgvector) -> Scratch {
         include_str!("../data_migrations/002_gsi_pending.sql"),
         include_str!("../data_migrations/003_idempotency_account_scope.sql"),
         include_str!("../data_migrations/004_vector_index_state.sql"),
+        // Empty fixture: no Rust backfill is needed between the routing DDL steps.
+        include_str!("../src/migrations/base_pk/prepare.sql"),
+        include_str!("../src/migrations/base_pk/finish.sql"),
     ] {
         sqlx::raw_sql(sql)
             .execute(&catalog)
@@ -200,6 +203,7 @@ async fn scratch(pgvector: Pgvector) -> Scratch {
             // pool.
             pool_size: 10,
             max_item_size_bytes: 400_000,
+            stream_sharding: None,
         },
         REGION,
     )
@@ -2607,6 +2611,7 @@ async fn scratch_with_pgvector_omitted_but_data_installed(
             connection_string: format!("{base}/{}", catalog.db_name),
             pool_size: 10,
             max_item_size_bytes: 400_000,
+            stream_sharding: None,
         },
         REGION,
     )

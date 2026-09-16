@@ -25,6 +25,10 @@ pub struct PostgresStorageConfig {
         deserialize_with = "extenddb_storage::config::string_coerce::opt_u32"
     )]
     pub catalog_pool_size: Option<u32>,
+    /// Immutable bucket mapping for newly created streams. Omission retains
+    /// legacy CRC32/4 assignment. Existing streams keep their stored mapping.
+    #[serde(default)]
+    pub stream_sharding: Option<crate::StreamSharding>,
 }
 
 impl Default for PostgresStorageConfig {
@@ -33,6 +37,7 @@ impl Default for PostgresStorageConfig {
             connection_string: default_connection_string(),
             pool_size: default_pool_size(),
             catalog_pool_size: None,
+            stream_sharding: None,
         }
     }
 }
@@ -146,6 +151,35 @@ impl extenddb_storage::config::StorageConfig for PostgresStorageConfig {
 #[cfg(test)]
 mod env_override_tests {
     use super::PostgresStorageConfig;
+
+    #[test]
+    fn stream_mapping_accepts_environment_values_and_full_width_seed() {
+        let cfg: PostgresStorageConfig = toml::from_str(
+            r#"
+            [stream_sharding]
+            hash = "xxhash64"
+            bucket_count = "256"
+            seed = "18446744073709551615"
+        "#,
+        )
+        .unwrap();
+        let routing = cfg.stream_sharding.unwrap();
+        assert_eq!(routing.bucket_count, 256);
+        assert_eq!(routing.seed, u64::MAX);
+        routing.validate().unwrap();
+        assert!(
+            toml::from_str::<PostgresStorageConfig>(
+                r#"
+            [stream_sharding]
+            hash = "unknown"
+            bucket_count = 16
+        "#
+            )
+            .is_err()
+        );
+        let default: PostgresStorageConfig = toml::from_str("").unwrap();
+        assert!(default.stream_sharding.is_none());
+    }
 
     /// Issue #222: `EXTENDDB__STORAGE__POSTGRES__CATALOG_POOL_SIZE=10` reaches
     /// this deserializer as the string "10". The typed fields must accept it.

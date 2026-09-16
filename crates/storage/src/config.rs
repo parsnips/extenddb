@@ -123,6 +123,14 @@ pub mod string_coerce {
         coerce(deserializer, "u32")
     }
 
+    /// Deserialize a `u64` from a number or string (including environment overrides).
+    ///
+    /// # Errors
+    /// Returns an error if the value cannot be parsed as a `u64`.
+    pub fn u64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+        coerce(deserializer, "u64")
+    }
+
     /// Deserialize an `Option<u32>` from a number, its string form, or absent.
     ///
     /// # Errors
