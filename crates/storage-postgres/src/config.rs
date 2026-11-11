@@ -25,6 +25,16 @@ pub struct PostgresStorageConfig {
         deserialize_with = "extenddb_storage::config::string_coerce::opt_u32"
     )]
     pub catalog_pool_size: Option<u32>,
+    /// How long the write path may reuse a table's index definitions instead of
+    /// reading them from the catalog on every item write, in milliseconds.
+    /// Unset or zero reads them on every write. Safe only when this server
+    /// process makes every DDL change on its catalog; see
+    /// `data::index_cache` for why.
+    #[serde(
+        default,
+        deserialize_with = "extenddb_storage::config::string_coerce::opt_u32"
+    )]
+    pub write_path_index_cache_ttl_ms: Option<u32>,
 }
 
 impl Default for PostgresStorageConfig {
@@ -33,6 +43,7 @@ impl Default for PostgresStorageConfig {
             connection_string: default_connection_string(),
             pool_size: default_pool_size(),
             catalog_pool_size: None,
+            write_path_index_cache_ttl_ms: None,
         }
     }
 }

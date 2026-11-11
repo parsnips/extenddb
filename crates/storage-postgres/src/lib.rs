@@ -63,6 +63,7 @@ pub use data::gsi_build::reconcile_creating_gsis;
 /// a GSI created in between. Hidden because no deployment path calls it.
 #[doc(hidden)]
 pub use data::gsi_build::{PauseWrites, pause_writes_for_tests};
+pub use data::index_cache::set_ttl as set_write_path_index_cache_ttl;
 /// Apply one queued vector row from its own context.
 ///
 /// Reachable so an integration test can drive the classification the propagation
@@ -848,8 +849,21 @@ fn server_components_factory(
         job_floor,
         options.max_concurrent_jobs,
     );
+    let write_path_index_cache_ttl = config
+        .as_any()
+        .downcast_ref::<crate::config::PostgresStorageConfig>()
+        .and_then(|c| c.write_path_index_cache_ttl_ms)
+        .filter(|&ms| ms > 0)
+        .map(|ms| std::time::Duration::from_millis(u64::from(ms)));
     let region = region.to_string();
     Box::pin(async move {
+        if let Some(ttl) = write_path_index_cache_ttl {
+            tracing::info!(
+                "write-path index cache on: storage.postgres.write_path_index_cache_ttl_ms = {}",
+                ttl.as_millis()
+            );
+        }
+        crate::data::index_cache::set_ttl(write_path_index_cache_ttl);
         // Every caller registers, a command too: a migration must not run
         // under one. A command's session carries its own name.
         let registration = migrations::ServerRegistration::register_as(

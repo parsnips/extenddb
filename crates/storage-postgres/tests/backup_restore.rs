@@ -4862,6 +4862,7 @@ mod catalog_index {
             connection_string: s.catalog_url.clone(),
             pool_size: 10,
             catalog_pool_size: Some(10),
+            write_path_index_cache_ttl_ms: None,
         };
         let open = |beside_server: bool| {
             let mut options = ServerComponentsOptions::default();

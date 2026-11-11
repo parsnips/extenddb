@@ -102,6 +102,8 @@ impl PostgresEngine {
         account_id: &str,
         input: UpdateTableInput,
     ) -> Result<TableDescription, StorageError> {
+        // Held to the end, past the catalog commit; see `index_cache`.
+        let _catalog_change = crate::data::index_cache::catalog_change();
         Self::validate_account_id(account_id)?;
         let mut tx = self
             .pool

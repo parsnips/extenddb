@@ -122,6 +122,8 @@ impl PostgresEngine {
         defer_active: bool,
         restore: Option<RestoreSource<'_>>,
     ) -> Result<TableDescription, StorageError> {
+        // Held to the end, past the catalog commit; see `index_cache`.
+        let _catalog_change = crate::data::index_cache::catalog_change();
         Self::validate_account_id(account_id)?;
         let input = extenddb_storage::stream_lineage::without_disabled_specification(input);
         let table_id = uuid::Uuid::new_v4().to_string();

@@ -41,6 +41,7 @@ pub(crate) fn sqlstate_message(e: &sqlx::Error) -> String {
 }
 
 /// Metadata for a single index, used during write-path GSI/LSI sync.
+#[derive(Clone)]
 pub(crate) struct IndexMeta {
     pub(super) index_id: String,
     pub(super) index_name: String,
@@ -94,6 +95,14 @@ pub(crate) async fn fetch_write_path_indexes(
     ),
     StorageError,
 > {
+    // With the cache on, a hit stands for a catalog read at its stamp; see
+    // `index_cache` for why that holds and when it does not.
+    if let Some((cached, stamp)) = super::index_cache::lookup(table_id) {
+        super::gsi_build::pause_after_index_read().await;
+        let (indexes, vector_metas) = (*cached).clone();
+        return Ok((indexes, vector_metas, stamp));
+    }
+    let fill = super::index_cache::begin_fill();
     let mut conn = pool
         .acquire()
         .await
@@ -103,6 +112,13 @@ pub(crate) async fn fetch_write_path_indexes(
     let vector_metas =
         crate::data::vector_index::fetch_vector_indexes_for_table(&mut *conn, table_id).await?;
     drop(conn);
+    if let Some(token) = fill {
+        super::index_cache::fill(
+            token,
+            table_id,
+            std::sync::Arc::new((indexes.clone(), vector_metas.clone())),
+        );
+    }
     super::gsi_build::pause_after_index_read().await;
     Ok((indexes, vector_metas, stamp))
 }

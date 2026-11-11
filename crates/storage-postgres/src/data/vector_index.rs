@@ -746,6 +746,8 @@ impl extenddb_storage::vector_lifecycle::VectorIndexBuild for PostgresVectorBuil
     }
 
     async fn mark_active(&mut self, skipped: usize) -> Result<(), StorageError> {
+        // Held to the end, past the catalog commit; see `index_cache`.
+        let _catalog_change = crate::data::index_cache::catalog_change();
         let skipped = i64::try_from(skipped).unwrap_or(i64::MAX);
         // One transition: ACTIVE, the member cleared to absent rather than false,
         // and the skip count recorded so an index that deliberately omits rows says

@@ -970,6 +970,8 @@ pub(crate) async fn remove_failed_build(
     table_id: &str,
     build: &GsiBuild,
 ) {
+    // Held to the end, past the catalog commit; see `index_cache`.
+    let _catalog_change = crate::data::index_cache::catalog_change();
     // By id, not name: the name may already belong to a newer index.
     let deleted = sqlx::query(
         "DELETE FROM indexes WHERE table_id = $1 AND index_id = $2 \

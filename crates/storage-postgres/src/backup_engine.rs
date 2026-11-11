@@ -834,6 +834,8 @@ impl PostgresEngine {
         item_count: i64,
         table_size: i64,
     ) -> Result<bool, StorageError> {
+        // Held to the end, past the catalog commit; see `index_cache`.
+        let _catalog_change = crate::data::index_cache::catalog_change();
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let done = sqlx::query(
             "UPDATE table_restores SET status = 'DONE', completed_at = now() \
@@ -947,6 +949,8 @@ impl PostgresEngine {
     /// interface.
     #[doc(hidden)]
     pub async fn abort_restore(&self, table_id: &str) -> Result<bool, StorageError> {
+        // Held to the end, past the catalog commit; see `index_cache`.
+        let _catalog_change = crate::data::index_cache::catalog_change();
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let claimed = sqlx::query(
             "UPDATE tables SET table_status = 'DELETING', status_transition_at = NOW() \

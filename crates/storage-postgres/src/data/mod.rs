@@ -137,6 +137,7 @@ mod ddl;
 mod delete_item;
 pub(crate) mod gsi_build;
 pub(crate) mod index;
+pub mod index_cache;
 mod put_item;
 mod query;
 mod query_scan;
