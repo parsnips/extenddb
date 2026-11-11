@@ -93,7 +93,16 @@ pub async fn handle_put_item(
             ))
         }
     })?;
+    put_item_input(input, ctx).await
+}
 
+/// `PutItem` from its typed input: the checks that follow the body's
+/// deserialization, then the write. The PartiQL `INSERT` executor calls it
+/// with the input it built.
+pub(crate) async fn put_item_input(
+    input: PutItemInput,
+    ctx: &OperationContext,
+) -> Result<DispatchResult, DynamoDbError> {
     // An attribute name over the size limit is input validation: the service
     // reports it ahead of the table lookup, so a request naming a missing
     // table answers with the name refusal. A name that arrives only through
