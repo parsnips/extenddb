@@ -16,6 +16,13 @@
 //! backend per process, so a build with more than one would be ambiguous and is
 //! rejected at compile time.
 
+// mimalloc replaces the glibc allocator. Under the many tokio worker threads of
+// a server, glibc malloc and free took about 22% of the process's CPU in a
+// write-heavy profile (Twisp posttx-bench, 2026-11-10), and the request path
+// allocates on every JSON value, attribute, and string it builds.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 // Exactly one backend feature must be enabled.
 #[cfg(any(
     all(feature = "postgres", feature = "cassandra"),
