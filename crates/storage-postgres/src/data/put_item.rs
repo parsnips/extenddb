@@ -90,12 +90,19 @@ impl PostgresEngine {
         // A write that is already slow takes the transaction path even with no
         // index to maintain, so that a repair for a GSI created meanwhile commits
         // with the write (`gsi_build::fix_up_stale_write`) instead of after it.
-        let needs_tx = condition.is_some()
-            || return_old
-            || !indexes.is_empty()
-            || !vector_metas.is_empty()
-            || stream.is_some()
-            || stamp.elapsed() > super::gsi_build::GRACE_WRITE;
+        let no_tx_work = !return_old
+            && indexes.is_empty()
+            && vector_metas.is_empty()
+            && stream.is_none()
+            && stamp.elapsed() <= super::gsi_build::GRACE_WRITE;
+        // A create-only put ("the item must not exist") with nothing else to do
+        // in a transaction is one autocommit `INSERT ... ON CONFLICT DO NOTHING`:
+        // a row inserted means the item did not exist, no row means it did. That
+        // is one round trip in place of BEGIN, a locking read, the insert and
+        // COMMIT.
+        let create_only = no_tx_work
+            && condition.is_some_and(|c| requires_absent_item(c, &key_info.key_schema, maps));
+        let needs_tx = !no_tx_work || (condition.is_some() && !create_only);
 
         if let Some((sk_name, sk_type)) =
             sk_info(&key_info.key_schema, &key_info.attribute_definitions)
@@ -258,6 +265,45 @@ impl PostgresEngine {
                 } else {
                     Ok(None)
                 }
+            } else if create_only {
+                let insert_sql = format!(
+                    "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
+                     ON CONFLICT (pk, {sk_col}) DO NOTHING"
+                );
+                let select_sql =
+                    format!("SELECT item_data FROM {ddb_table} WHERE pk = $1 AND {sk_col} = $2");
+                let mut attempt: u32 = 0;
+                loop {
+                    super::gsi_build::pause_before_autocommit_statement().await;
+                    let result = bind_sk_execute!(
+                        &insert_sql,
+                        pk_text.as_str(),
+                        &sk,
+                        &item_json,
+                        &self.data_pool
+                    )?;
+                    if result.rows_affected() == 1 {
+                        break;
+                    }
+                    // The item exists, so the condition fails. Report the item
+                    // that blocked the insert, as the transaction path does. If a
+                    // delete committed since, the insert is tried again.
+                    let existing: Option<(serde_json::Value,)> = bind_sk_fetch_optional!(
+                        &select_sql,
+                        pk_text.as_str(),
+                        &sk,
+                        &self.data_pool
+                    )?;
+                    if let Some((v,)) = existing {
+                        return Err(StorageError::ConditionFailed(Some(json_to_item(v)?)));
+                    }
+                    attempt += 1;
+                    if attempt >= MAX_CREATE_RACE_ATTEMPTS {
+                        return Err(create_race_exhausted(attempt));
+                    }
+                }
+                self.fix_up_autocommit(stamp, key_info, &item).await;
+                Ok(None)
             } else {
                 let upsert_sql = format!(
                     "INSERT INTO {ddb_table} (pk, {sk_col}, item_data) VALUES ($1, $2, $3) \
@@ -436,6 +482,40 @@ impl PostgresEngine {
                 } else {
                     Ok(None)
                 }
+            } else if create_only {
+                let insert_sql = format!(
+                    "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
+                     ON CONFLICT (pk) DO NOTHING"
+                );
+                let select_sql = format!("SELECT item_data FROM {ddb_table} WHERE pk = $1");
+                let mut attempt: u32 = 0;
+                loop {
+                    super::gsi_build::pause_before_autocommit_statement().await;
+                    let result = sqlx::query(&insert_sql)
+                        .bind(pk_text.as_str())
+                        .bind(&item_json)
+                        .execute(&self.data_pool)
+                        .await
+                        .map_err(|e| StorageError::Internal(e.to_string()))?;
+                    if result.rows_affected() == 1 {
+                        break;
+                    }
+                    // See the sort-key branch above.
+                    let existing: Option<(serde_json::Value,)> = sqlx::query_as(&select_sql)
+                        .bind(pk_text.as_str())
+                        .fetch_optional(&self.data_pool)
+                        .await
+                        .map_err(|e| StorageError::Internal(e.to_string()))?;
+                    if let Some((v,)) = existing {
+                        return Err(StorageError::ConditionFailed(Some(json_to_item(v)?)));
+                    }
+                    attempt += 1;
+                    if attempt >= MAX_CREATE_RACE_ATTEMPTS {
+                        return Err(create_race_exhausted(attempt));
+                    }
+                }
+                self.fix_up_autocommit(stamp, key_info, &item).await;
+                Ok(None)
             } else {
                 let upsert_sql = format!(
                     "INSERT INTO {ddb_table} (pk, item_data) VALUES ($1, $2) \
@@ -499,6 +579,39 @@ impl PostgresEngine {
 /// bound as `UpdateItem`.
 const MAX_CREATE_RACE_ATTEMPTS: u32 = 5;
 
+/// Whether `condition` holds exactly when the item does not exist: one or more
+/// `attribute_not_exists` on a key attribute, joined by AND.
+///
+/// Every stored item carries its key attributes, so such a condition passes
+/// against no item and fails against every item, whatever else it holds. A
+/// `#name` that does not resolve answers false, which leaves the request to
+/// the transaction path and its validation error.
+fn requires_absent_item(
+    condition: &Expr,
+    key_schema: &[extenddb_core::types::KeySchemaElement],
+    maps: &ExpressionMaps,
+) -> bool {
+    match condition {
+        Expr::And(a, b) => {
+            requires_absent_item(a, key_schema, maps) && requires_absent_item(b, key_schema, maps)
+        }
+        Expr::Function { name, args } if name == "attribute_not_exists" => match args.as_slice() {
+            [Expr::Path(path)] => match path.as_slice() {
+                [extenddb_core::expression::PathElement::Attribute(attr)] => {
+                    extenddb_core::expression::resolve_name_ref(attr, maps).is_ok_and(|resolved| {
+                        key_schema
+                            .iter()
+                            .any(|k| k.attribute_name == resolved.as_ref())
+                    })
+                }
+                _ => false,
+            },
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 /// The error after `MAX_CREATE_RACE_ATTEMPTS` lost create races. Like the one
 /// `UpdateItem` returns, it is an internal error (HTTP 500).
 fn create_race_exhausted(attempt: u32) -> StorageError {
@@ -506,4 +619,59 @@ fn create_race_exhausted(attempt: u32) -> StorageError {
         "PutItem could not create the item after {attempt} attempts: each insert lost the \
          create race to a concurrent writer"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requires_absent_item;
+    use extenddb_core::expression::{ExpressionMaps, parse_condition, tokenize};
+    use extenddb_core::types::{KeySchemaElement, KeyType};
+
+    fn schema() -> Vec<KeySchemaElement> {
+        vec![
+            KeySchemaElement {
+                attribute_name: "pk".to_owned(),
+                key_type: KeyType::Hash,
+            },
+            KeySchemaElement {
+                attribute_name: "sk".to_owned(),
+                key_type: KeyType::Range,
+            },
+        ]
+    }
+
+    fn check(expr: &str, names: &[(&str, &str)]) -> bool {
+        let cond = parse_condition(&tokenize(expr).expect("tokenize")).expect("parse");
+        let mut maps = ExpressionMaps::default();
+        for (k, v) in names {
+            maps.names.insert((*k).to_owned(), (*v).to_owned());
+        }
+        requires_absent_item(&cond, &schema(), &maps)
+    }
+
+    #[test]
+    fn only_not_exists_on_key_attributes_requires_an_absent_item() {
+        assert!(check("attribute_not_exists(pk)", &[]));
+        assert!(check("attribute_not_exists(sk)", &[]));
+        assert!(check(
+            "attribute_not_exists(pk) AND attribute_not_exists(sk)",
+            &[]
+        ));
+        assert!(check("attribute_not_exists(#k)", &[("k", "pk")]));
+
+        assert!(!check("attribute_not_exists(other)", &[]));
+        assert!(!check("attribute_not_exists(#k)", &[("k", "other")]));
+        assert!(!check("attribute_not_exists(#missing)", &[]));
+        assert!(!check(
+            "attribute_not_exists(pk) OR attribute_not_exists(sk)",
+            &[]
+        ));
+        assert!(!check(
+            "attribute_not_exists(pk) AND attribute_not_exists(other)",
+            &[]
+        ));
+        assert!(!check("NOT attribute_exists(pk)", &[]));
+        assert!(!check("attribute_exists(pk)", &[]));
+        assert!(!check("attribute_not_exists(pk.x)", &[]));
+    }
 }
