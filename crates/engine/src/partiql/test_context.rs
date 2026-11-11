@@ -31,6 +31,14 @@ pub(super) fn block_on<F: Future>(future: F) -> F::Output {
 
 /// A context whose item authorizer is `authorizer`.
 pub(super) async fn context(authorizer: Option<Arc<dyn ItemAuthorizer>>) -> OperationContext {
+    // EXTENDDB_TEST_PARTIQL_STATEMENT_CACHE runs the PartiQL tests with the
+    // statement cache on.
+    static CACHE: std::sync::Once = std::sync::Once::new();
+    CACHE.call_once(|| {
+        if std::env::var_os("EXTENDDB_TEST_PARTIQL_STATEMENT_CACHE").is_some() {
+            extenddb_core::partiql::parser::set_statement_cache_capacity(1024);
+        }
+    });
     let storage = SqliteEngine::new(":memory:", 1, "us-east-1", 409_600)
         .await
         .expect("an in-memory database opens");

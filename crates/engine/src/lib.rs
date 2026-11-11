@@ -35,6 +35,7 @@ mod legacy_filter;
 mod list_tables;
 #[cfg(feature = "partiql")]
 mod partiql;
+pub use partiql::set_direct_insert as set_partiql_direct_insert;
 mod put_item;
 mod query;
 mod read_helpers;

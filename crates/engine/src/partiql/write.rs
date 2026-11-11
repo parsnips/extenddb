@@ -38,6 +38,30 @@ use update::run_update;
 pub(super) use delete::build_delete_parts;
 pub(super) use exists::build_exists_parts;
 pub(super) use insert::{PutParts, build_insert_parts, insert_refusal};
+
+/// Whether an `INSERT` hands its typed item to `PutItem` directly (see
+/// [`set_direct_insert`]). Off by default.
+static DIRECT_INSERT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turn the direct `INSERT` path on or off for this process.
+///
+/// Off, an `INSERT` builds a `PutItem` JSON body from its typed item and
+/// `PutItem` deserializes it again. On, the `INSERT` builds the typed
+/// `PutItem` input and `PutItem` runs the checks that follow its body's
+/// deserialization on it, so the JSON step is skipped. The request's values
+/// pass the same checks either way: they are checked as they are read from
+/// the request.
+pub fn set_direct_insert(on: bool) {
+    DIRECT_INSERT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the direct `INSERT` path is on. A test build also turns it on when
+/// `EXTENDDB_TEST_PARTIQL_DIRECT_INSERT` is set, so the PartiQL tests can run
+/// on both paths.
+fn direct_insert() -> bool {
+    DIRECT_INSERT.load(std::sync::atomic::Ordering::Relaxed)
+        || (cfg!(test) && std::env::var_os("EXTENDDB_TEST_PARTIQL_DIRECT_INSERT").is_some())
+}
 pub(super) use update::{
     UpdateParts, build_update_parts, check_overlapping_paths, first_overlap,
     update_index_key_refusal, update_refusal,

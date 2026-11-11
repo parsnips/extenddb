@@ -84,6 +84,15 @@ pub struct ServerConfig {
     /// client can hold a connection open. Default 30.
     #[serde(default = "default_request_timeout_secs")]
     pub request_timeout_secs: u64,
+    /// The number of PartiQL statement texts whose parse the server keeps, so
+    /// that a request with a text it has parsed before skips the parse. 0, the
+    /// default, turns the cache off.
+    #[serde(default)]
+    pub partiql_statement_cache_entries: usize,
+    /// Hand the typed item of a PartiQL `INSERT` to `PutItem` without building
+    /// and parsing a JSON body. Off by default.
+    #[serde(default)]
+    pub partiql_direct_insert: bool,
 }
 
 fn default_request_timeout_secs() -> u64 {
@@ -100,6 +109,8 @@ impl Default for ServerConfig {
             tls: TlsConfig::default(),
             throttling_enabled: None,
             request_timeout_secs: default_request_timeout_secs(),
+            partiql_statement_cache_entries: 0,
+            partiql_direct_insert: false,
         }
     }
 }

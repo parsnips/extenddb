@@ -591,6 +591,21 @@ async fn serve_inner(params: ServeParams, port: u16) -> anyhow::Result<()> {
     // P120e: Create metrics collector early so workers can record health.
     let metrics = Arc::new(extenddb_core::metrics::MetricsCollector::new());
 
+    // The PartiQL fast paths are process-wide and off unless configured.
+    extenddb_core::partiql::parser::set_statement_cache_capacity(
+        app_config.server.partiql_statement_cache_entries,
+    );
+    extenddb_engine::set_partiql_direct_insert(app_config.server.partiql_direct_insert);
+    if app_config.server.partiql_statement_cache_entries > 0
+        || app_config.server.partiql_direct_insert
+    {
+        tracing::info!(
+            statement_cache_entries = app_config.server.partiql_statement_cache_entries,
+            direct_insert = app_config.server.partiql_direct_insert,
+            "PartiQL fast paths on"
+        );
+    }
+
     // Dev mode serves plain HTTP regardless of the configured TLS state; the
     // app crate's `config::is_tls_enabled` applies the same rule for clients.
     let tls_enabled = app_config.server.tls.enabled && !dev_mode;

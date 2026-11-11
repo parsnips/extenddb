@@ -61,6 +61,8 @@ mod test_context;
 mod transaction;
 mod write;
 
+pub use write::set_direct_insert;
+
 /// The confined PartiQL surface, implemented once for [`OperationContext`].
 pub trait PartiqlExecutor {
     /// `ExecuteStatement`: one statement, response under `Items`.

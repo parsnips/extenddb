@@ -17,6 +17,8 @@ mod limits;
 mod literals;
 mod operands;
 mod predicates;
+mod statement_cache;
+pub use statement_cache::set_statement_cache_capacity;
 mod statements;
 mod terms;
 mod walk;
@@ -133,7 +135,11 @@ pub fn parse(input: &str) -> PResult<Statement> {
 ///
 /// As [`parse`].
 pub fn parse_for_request(input: &str, parameters: usize) -> PResult<Statement> {
-    limits::parse_on_a_fitting_stack(|inline| parse_attempt(input, Some(parameters), false, inline))
+    statement_cache::parse_cached(input, parameters, false, || {
+        limits::parse_on_a_fitting_stack(|inline| {
+            parse_attempt(input, Some(parameters), false, inline)
+        })
+    })
 }
 
 /// [`parse_for_request`] for an ExecuteStatement request, which refuses an
@@ -145,7 +151,11 @@ pub fn parse_for_request(input: &str, parameters: usize) -> PResult<Statement> {
 ///
 /// As [`parse`].
 pub fn parse_for_execute_statement(input: &str, parameters: usize) -> PResult<Statement> {
-    limits::parse_on_a_fitting_stack(|inline| parse_attempt(input, Some(parameters), true, inline))
+    statement_cache::parse_cached(input, parameters, true, || {
+        limits::parse_on_a_fitting_stack(|inline| {
+            parse_attempt(input, Some(parameters), true, inline)
+        })
+    })
 }
 
 /// [`parse`] with the full caps on the calling thread, for the tests that

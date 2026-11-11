@@ -3,13 +3,16 @@
 
 //! The INSERT statement: a create-only PutItem.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{Map, Value, json};
 
 use extenddb_core::error::DynamoDbError;
 use extenddb_core::partiql::ast::InsertStatement;
-use extenddb_core::types::{AttributeValue, Item, TableKeyInfo};
+use extenddb_core::types::{
+    AttributeValue, Item, PutItemInput, ReturnConsumedCapacity, ReturnItemCollectionMetrics,
+    ReturnValues, ReturnValuesOnConditionCheckFailure, TableKeyInfo,
+};
 use extenddb_core::validation::validate_index_key_types;
 
 use super::expr_builder::ExprBuilder;
@@ -29,8 +32,26 @@ pub(super) async fn run_insert(
     req: &SingleRequest,
     gate: &mut Gate<'_>,
 ) -> Result<DispatchResult, DynamoDbError> {
-    let parts = build_insert_parts(ctx, insert, &req.parameters).await?;
+    let typed = build_insert_typed(ctx, insert, &req.parameters).await?;
     gate.pass().await?;
+    let typed = if super::direct_insert() {
+        match direct_put_input(typed, req) {
+            Ok(input) => {
+                let result = crate::put_item::put_item_input(input, ctx)
+                    .await
+                    .map_err(|e| {
+                        crate::partiql::bare_expression_error(item_depth::item_nesting_error(
+                            map_insert_error(e),
+                        ))
+                    });
+                return Ok(reshape(result?));
+            }
+            Err(typed) => typed,
+        }
+    } else {
+        typed
+    };
+    let parts = typed.into_parts()?;
     let mut body = json!({
         "TableName": parts.table,
         "Item": parts.item,
@@ -58,6 +79,104 @@ pub(crate) struct PutParts {
     pub names: Map<String, Value>,
 }
 
+/// [`PutParts`] with the item still typed.
+pub(crate) struct TypedPutParts {
+    table: String,
+    item: BTreeMap<String, AttributeValue>,
+    condition: String,
+    names: Map<String, Value>,
+}
+
+impl TypedPutParts {
+    fn into_parts(self) -> Result<PutParts, DynamoDbError> {
+        Ok(PutParts {
+            table: self.table,
+            item: to_json(&self.item)?,
+            condition: self.condition,
+            names: self.names,
+        })
+    }
+}
+
+/// Normalize the numbers of `value` as deserializing its JSON form does: each
+/// `N`, and each member of an `NS`, at any depth. A number written as a
+/// literal in the statement (`.7325e1`) reaches the item as written, and the
+/// JSON path stores it normalized (`7.325`). `false` when an `NS` would lose a
+/// member to a duplicate, which deserializing refuses.
+fn normalize_numbers(value: &mut AttributeValue) -> bool {
+    use extenddb_core::validation::number::validate_and_normalize_number;
+    match value {
+        AttributeValue::N(n) => {
+            if let Ok(normalized) = validate_and_normalize_number(n) {
+                *n = normalized;
+            }
+            true
+        }
+        AttributeValue::NS(set) => {
+            let normalized: std::collections::BTreeSet<String> = set
+                .iter()
+                .map(|n| validate_and_normalize_number(n).unwrap_or_else(|_| n.clone()))
+                .collect();
+            if normalized.len() != set.len() {
+                return false;
+            }
+            *set = normalized;
+            true
+        }
+        AttributeValue::L(list) => list.iter_mut().all(normalize_numbers),
+        AttributeValue::M(map) => map.values_mut().all(normalize_numbers),
+        AttributeValue::S(_)
+        | AttributeValue::B(_)
+        | AttributeValue::SS(_)
+        | AttributeValue::BS(_)
+        | AttributeValue::Bool(_)
+        | AttributeValue::Null => true,
+    }
+}
+
+/// The typed `PutItem` input of `parts`, as `PutItem` would deserialize it
+/// from the JSON body that `run_insert` otherwise builds. `parts` back when a
+/// member would not deserialize to the same value (an unknown
+/// `ReturnConsumedCapacity`, or a number set that normalizing would merge), so
+/// that the JSON path handles it.
+fn direct_put_input(
+    mut parts: TypedPutParts,
+    req: &SingleRequest,
+) -> Result<PutItemInput, TypedPutParts> {
+    // Normalizing is idempotent and leaves a merging set as it was, so the
+    // JSON path gives the same result from an item normalized in part.
+    if !parts.item.values_mut().all(normalize_numbers) {
+        return Err(parts);
+    }
+    let return_consumed_capacity = match req.return_consumed_capacity.as_deref() {
+        None | Some("NONE") => ReturnConsumedCapacity::None,
+        Some("TOTAL") => ReturnConsumedCapacity::Total,
+        Some("INDEXES") => ReturnConsumedCapacity::Indexes,
+        Some(_) => return Err(parts),
+    };
+    let Some(names) = parts
+        .names
+        .iter()
+        .map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_owned())))
+        .collect::<Option<HashMap<_, _>>>()
+    else {
+        return Err(parts);
+    };
+    Ok(PutItemInput {
+        table_name: parts.table,
+        item: parts.item.into_iter().collect(),
+        return_values: ReturnValues::default(),
+        condition_expression: Some(parts.condition),
+        expression_attribute_names: Some(names),
+        expression_attribute_values: None,
+        expected: None,
+        conditional_operator: None,
+        return_values_on_condition_check_failure: ReturnValuesOnConditionCheckFailure::default(),
+        return_consumed_capacity,
+        return_item_collection_metrics: ReturnItemCollectionMetrics::default(),
+    })
+}
+
 /// Translate an `INSERT` into its `PutItem` pieces (create-only condition,
 /// item, names), resolving `?` parameters. Does not dispatch.
 ///
@@ -70,6 +189,15 @@ pub(crate) async fn build_insert_parts(
     insert: &InsertStatement,
     params: &[AttributeValue],
 ) -> Result<PutParts, DynamoDbError> {
+    build_insert_typed(ctx, insert, params).await?.into_parts()
+}
+
+/// [`build_insert_parts`] with the item still typed.
+async fn build_insert_typed(
+    ctx: &OperationContext,
+    insert: &InsertStatement,
+    params: &[AttributeValue],
+) -> Result<TypedPutParts, DynamoDbError> {
     let key_info = ctx
         .table_key_info(&insert.table)
         .await
@@ -97,9 +225,9 @@ pub(crate) async fn build_insert_parts(
     let pk_ref = builder.name(pk_name);
     let condition = format!("attribute_not_exists({pk_ref})");
 
-    Ok(PutParts {
+    Ok(TypedPutParts {
         table: insert.table.clone(),
-        item: to_json(&item)?,
+        item,
         condition,
         names: builder.names,
     })
